@@ -52,7 +52,6 @@ public class UIManager : MonoBehaviour
             
             GameObject iconObject = Instantiate(skillIconPrefab, skillIconContainer);
             
-            // ★ TODO 구현: 생성된 아이콘에 SkillData.icon과 KeyCode를 표시
             SkillIconUI iconUI = iconObject.GetComponent<SkillIconUI>(); // SkillIconUI라는 보조 스크립트가 필요합니다 (아래 참조).
             if (iconUI != null)
             {
@@ -89,7 +88,6 @@ public class UIManager : MonoBehaviour
     // --- 판정 결과 표시 함수 ---
     public void ShowJudgment(string judgmentTextString)
     {
-        // ★ TODO 구현: 화면 중앙에 Perfect, Great 등의 텍스트를 잠시 띄우는 로직 구현
         if (judgmentText != null)
         {
             judgmentText.text = judgmentTextString;
