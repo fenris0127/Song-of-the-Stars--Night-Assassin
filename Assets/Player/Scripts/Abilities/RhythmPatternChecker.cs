@@ -2,269 +2,229 @@ using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 
+/// <summary>
+/// 플레이어의 스킬 입력 판정, 쿨타임 관리, Focus 시스템을 담당합니다.
+/// </summary>
 public class RhythmPatternChecker : MonoBehaviour
 {
-    [Header("Component References")]
+    #region 컴포넌트 및 참조
     private RhythmSyncManager _rhythmManager;
-    private PlayerController _playerController;
-    private PlayerAssassination _assassinationManager;
-    private MissionManager _missionManager;
-    private VFXManager _vfxManager;
-    private UIManager _uiManager; 
+    private UIManager _uiManager;
+    private PlayerController _playerController; // Free Move 상태 체크용
+    private SkillLoadoutManager _loadoutManager;
+    #endregion
     
-    [Header("Skill Assets")]
-    public List<ConstellationSkillData> allSkills;
-    public GameObject capricornTrapPrefab;
-    public GameObject perfectVFXPrefab;
-    public AudioSource audioSource;
-    public AudioClip perfectSFX;
+    #region Focus 시스템
+    [Header("▶ Focus 시스템")]
+    public float maxFocus = 100f;
+    public float focusPerPerfect = 10f;
+    public float focusCostPerSkill = 5f;
+    public float currentFocus = 0f;
+    #endregion
 
-    private List<KeyCode> _currentInputPattern = new List<KeyCode>();
+    #region 스킬 상태 및 쿨타임
     private Dictionary<ConstellationSkillData, int> _skillCooldowns = new Dictionary<ConstellationSkillData, int>();
-    private bool _isCurrentComboPerfect = true;
+    private KeyCode _currentActiveSkillKey = KeyCode.None;
+    private int _inputSequenceCount = 0; 
+    private bool _isCurrentComboPerfect = true; 
+    #endregion
 
+    // --- Unity Life Cycle ---
     void Start()
     {
         _rhythmManager = FindObjectOfType<RhythmSyncManager>();
-        _playerController = GetComponent<PlayerController>();
-        _assassinationManager = GetComponent<PlayerAssassination>();
-        _missionManager = FindObjectOfType<MissionManager>();
-        _vfxManager = FindObjectOfType<VFXManager>();
         _uiManager = FindObjectOfType<UIManager>();
+        _playerController = GetComponent<PlayerController>();
+        _loadoutManager = GetComponent<SkillLoadoutManager>();
 
         if (_rhythmManager != null)
         {
-            _rhythmManager.OnBeatCounted.AddListener(CheckCooldowns);
+            // 비트마다 쿨타임 체크
+            _rhythmManager.OnBeatCounted.AddListener(CheckAllCooldowns);
         }
     }
 
     void Update()
     {
-        HandleRhythmInput();
+        // PlayerController에서 Free Move 상태가 아닐 때만 리듬 입력 처리
+        if (_playerController != null && !_playerController.isFreeMoving)
+        {
+            HandleRhythmInput();
+        }
     }
-
+    
+    // --- 입력 및 판정 로직 ---
     void HandleRhythmInput()
     {
-        if (Input.anyKeyDown)
+        foreach (var pair in _loadoutManager.activeSkills)
         {
-            foreach (KeyCode keycode in System.Enum.GetValues(typeof(KeyCode)))
+            KeyCode key = pair.Key;
+            
+            if (Input.GetKeyDown(key))
             {
-                if (Input.GetKeyDown(keycode))
-                {
-                    if (keycode == KeyCode.W || keycode == KeyCode.A || keycode == KeyCode.S || keycode == KeyCode.D || keycode == KeyCode.Space)
-                    {
-                        RhythmSyncManager.RhythmJudgment judgment = CheckRhythmJudgment();
-                        
-                        if (judgment != RhythmSyncManager.RhythmJudgment.None)
-                        {
-                            if (_uiManager != null)
-                                _uiManager.ShowJudgment(judgment.ToString());
-                        }
+                if (!_loadoutManager.activeSkills.ContainsKey(key)) continue;
 
-                        if (judgment == RhythmSyncManager.RhythmJudgment.Miss)
-                        {
-                            _currentInputPattern.Clear();
-                            _isCurrentComboPerfect = false; 
-                            return; 
-                        }
-                        
-                        _currentInputPattern.Add(keycode);
-                        _isCurrentComboPerfect = _isCurrentComboPerfect && (judgment == RhythmSyncManager.RhythmJudgment.Perfect);
-                        CheckForSkillMatch();
-                        break;
-                    }
+                RhythmSyncManager.RhythmJudgment judgment = _rhythmManager.CheckJudgment();
+                if (_uiManager != null) _uiManager.ShowJudgment(judgment.ToString());
+
+                // 1. Miss 판정: 현재 입력 시퀀스 초기화 (스킬 실패)
+                if (judgment == RhythmSyncManager.RhythmJudgment.Miss)
+                {
+                    ResetInputSequence();
+                    return;
                 }
+                
+                // 2. Perfect 판정: Focus 획득 (Perfect 판정은 100% 성공)
+                if (judgment == RhythmSyncManager.RhythmJudgment.Perfect)
+                {
+                    currentFocus = Mathf.Min(maxFocus, currentFocus + focusPerPerfect);
+                }
+                else
+                {
+                    // Great 판정 시 콤보는 Perfect가 아님
+                    _isCurrentComboPerfect = false;
+                }
+                
+                // 3. 스킬 시퀀스 체크 및 진행
+                if (_currentActiveSkillKey == KeyCode.None || _currentActiveSkillKey == key)
+                {
+                    // 첫 입력이거나 연속 입력인 경우
+                    ContinueSkillSequence(key);
+                }
+                else
+                {
+                    // 다른 키 입력 시 이전 시퀀스 버리고 새 시퀀스 시작 (관대하게 처리)
+                    StartNewSkillSequence(key);
+                }
+                
+                break;
             }
         }
     }
     
-    RhythmSyncManager.RhythmJudgment CheckRhythmJudgment()
+    // --- 스킬 시퀀스 관리 ---
+    void StartNewSkillSequence(KeyCode key)
     {
-        // 리듬 싱크 매니저의 BPM과 현재 DSP 시간을 이용해 정확도를 계산해야 합니다. 
-        // 여기서는 간단화를 위해 BeatInterval 주변의 입력만 Perfect로 간주합니다.
-        float timeSinceLastBeat = (float)(AudioSettings.dspTime % _rhythmManager.beatInterval);
+        // 이전 시퀀스의 Perfect 여부를 새 시퀀스 시작 전 초기화
+        _isCurrentComboPerfect = true; 
         
-        if (timeSinceLastBeat < 0.1f || timeSinceLastBeat > _rhythmManager.beatInterval - 0.1f)
-            return RhythmSyncManager.RhythmJudgment.Perfect;
+        _currentActiveSkillKey = key;
+        _inputSequenceCount = 1;
+
+        ConstellationSkillData skill = _loadoutManager.activeSkills[key];
         
-        return RhythmSyncManager.RhythmJudgment.Miss; 
-    }
-
-    void CheckForSkillMatch()
-    {
-        foreach (var skill in allSkills)
+        // 입력 횟수가 1회인 스킬은 즉시 발동
+        if (skill.inputCount == 1)
         {
-            if (IsSkillOnCooldown(skill)) continue;
-
-            if (_currentInputPattern.Count >= skill.rhythmPattern.Count)
-            {
-                bool match = true;
-                for (int i = 0; i < skill.rhythmPattern.Count; i++)
-                {
-                    if (_currentInputPattern[_currentInputPattern.Count - skill.rhythmPattern.Count + i] != skill.rhythmPattern[i])
-                    {
-                        match = false;
-                        break;
-                    }
-                }
-
-                if (match)
-                {
-                    ActivateSkill(skill);
-                    _currentInputPattern.Clear();
-                    _isCurrentComboPerfect = true; 
-                    return;
-                }
-            }
-        }
-        if (_currentInputPattern.Count > 10)
-        {
-            _currentInputPattern.RemoveAt(0); 
+            ActivateSkill(skill);
+            ResetInputSequence();
         }
     }
 
+    void ContinueSkillSequence(KeyCode key)
+    {
+        if (_currentActiveSkillKey == KeyCode.None) 
+        {
+            // 시퀀스가 비어있으면 새 시퀀스 시작
+            StartNewSkillSequence(key);
+            return;
+        }
+
+        if (_currentActiveSkillKey != key) return; // 다른 키 무시
+
+        _inputSequenceCount++;
+        ConstellationSkillData skill = _loadoutManager.activeSkills[key];
+
+        // 총 입력 횟수에 도달하면 발동
+        if (_inputSequenceCount >= skill.inputCount)
+        {
+            ActivateSkill(skill);
+            ResetInputSequence();
+        }
+    }
+
+    void ResetInputSequence()
+    {
+        _currentActiveSkillKey = KeyCode.None;
+        _inputSequenceCount = 0;
+        _isCurrentComboPerfect = true;
+    }
+    
+    // --- 스킬 발동 로직 ---
     void ActivateSkill(ConstellationSkillData skill)
     {
-        if (_vfxManager != null && skill.skillEffectPrefab != null)
-        {
-            _vfxManager.PlayVFXAt(skill.skillEffectPrefab, transform.position);
-        }
+        if (IsSkillOnCooldown(skill)) return;
         
+        // Focus 코스트 차감
+        currentFocus = Mathf.Max(0, currentFocus - focusCostPerSkill);
+
+        // 쿨타임 설정
+        int actualCooldown = skill.cooldownBeats;
+        
+        // Perfect 콤보 보상 (쿨타임 감소)
         if (_isCurrentComboPerfect)
         {
-            if (_vfxManager != null && perfectVFXPrefab != null)
-            {
-                _vfxManager.PlayVFXAt(perfectVFXPrefab, transform.position); 
-            }
-            if (audioSource != null && perfectSFX != null)
-            {
-                audioSource.PlayOneShot(perfectSFX);
-            }
+            // Perfect 성공 시 쿨타임 50% 감소 (정수 처리)
+            actualCooldown = Mathf.Max(1, actualCooldown / 2); 
+            // TODO: Perfect VFX/SFX 재생
         }
+        
+        SetSkillCooldown(skill, actualCooldown);
 
-        // --- 12개 별자리 스킬 로직 ---
-        if (skill.constellationName == "쌍둥이자리") 
-        {
-            PlayerStealth stealth = _playerController.GetComponent<PlayerStealth>();
-            if (stealth != null) stealth.ToggleStealth();
-        }
-        else if (skill.constellationName == "전갈자리") 
-        {
-            GuardRhythmPatrol target = _assassinationManager.FindGuardInAssassinationRange();
-            if (target != null) { _assassinationManager.ExecuteAssassinationStrike(target); }
-            SetSkillCooldown(skill);
-        }
-        else if (skill.constellationName == "천칭자리") 
-        {
-            GuardRhythmPatrol target = _assassinationManager.FindGuardInAssassinationRange();
-            int duration = 5; if (_isCurrentComboPerfect) duration += 3;
-            if (target != null) target.ApplyParalysis(duration);
-            SetSkillCooldown(skill);
-        }
-        else if (skill.constellationName == "게자리") 
-        {
-            if (!_playerController.isMemoryActive) { _playerController.SetMemoryPosition(); }
-            else { _playerController.TeleportToMemory(); SetSkillCooldown(skill); }
-        }
-        else if (skill.constellationName == "양자리") 
-        {
-            float duration = 3f; if (_isCurrentComboPerfect) duration += 1.5f;
-            _playerController.ActivateCharge(duration);
-            SetSkillCooldown(skill);
-        }
-        else if (skill.constellationName == "황소자리") 
-        {
-            int duration = 6; if (_isCurrentComboPerfect) duration += 4;
-            _playerController.ActivateShield(duration);
-            SetSkillCooldown(skill);
-        }
-        else if (skill.constellationName == "처녀자리") 
-        {
-            int amount = 3; if (_isCurrentComboPerfect) amount += 2; 
-            _missionManager.DecreaseAlertLevel(amount);
-            SetSkillCooldown(skill);
-        }
-        else if (skill.constellationName == "염소자리") 
-        {
-            if (capricornTrapPrefab != null)
-            {
-                GameObject trap = Instantiate(capricornTrapPrefab, transform.position, Quaternion.identity);
-                CapricornTrap trapComponent = trap.GetComponent<CapricornTrap>();
+        // 2. 개별 스킬 로직 분기
+        if (_playerController == null) return;
 
-                if (_isCurrentComboPerfect) { trapComponent.durationBeats += 5; trapComponent.stunDurationBeats += 2; }
-            }
-            SetSkillCooldown(skill);
-        }
-        else if (skill.constellationName == "물병자리") 
+        switch (skill.category)
         {
-            const float REDUCTION_AMOUNT = 5f; int duration = 6; if (_isCurrentComboPerfect) duration += 3;
-            Collider[] hitGuards = Physics.OverlapSphere(transform.position, 10f, _rhythmManager.guardMask);
-            foreach (Collider guardCollider in hitGuards)
-            {
-                GuardRhythmPatrol guard = guardCollider.GetComponent<GuardRhythmPatrol>();
-                if (guard != null) guard.ApplyJamming(REDUCTION_AMOUNT, duration);
-            }
-            SetSkillCooldown(skill);
+            case ConstellationSkillData.SkillCategory.Stealth:
+                _playerController.GetComponent<PlayerStealth>()?.ToggleStealth();
+                break;
+            case ConstellationSkillData.SkillCategory.Lure:
+                // Decoy (잔상) 스킬
+                _playerController.ActivateIllusion(5); // 5비트 동안 잔상 생성 예시
+                break;
+            case ConstellationSkillData.SkillCategory.Movement:
+                // Charge (돌진) 스킬
+                _playerController.ActivateCharge(skill.inputCount * _playerController.moveDistance); 
+                break;
+            case ConstellationSkillData.SkillCategory.Attack:
+                // TBD: 공격 로직 (근접 범위 공격 등)
+                break;
         }
-        else if (skill.constellationName == "물고기자리") 
-        {
-            int duration = 6; if (_isCurrentComboPerfect) duration += 4;
-            _playerController.ActivateIllusion(duration);
-            SetSkillCooldown(skill);
-        }
-        else if (skill.constellationName == "사자자리") 
-        {
-            const float REDUCTION_AMOUNT = 85f; int duration = 4; if (_isCurrentComboPerfect) duration += 2; 
-            Collider[] hitGuards = Physics.OverlapSphere(transform.position, 12f, _rhythmManager.guardMask);
-            foreach (Collider guardCollider in hitGuards)
-            {
-                GuardRhythmPatrol guard = guardCollider.GetComponent<GuardRhythmPatrol>();
-                if (guard != null) guard.ApplyFlash(REDUCTION_AMOUNT, duration);
-            }
-            SetSkillCooldown(skill);
-        }
-        else if (skill.constellationName == "궁수자리") 
-        {
-            RaycastHit hit; Vector3 raycastStart = transform.position + Vector3.up * 1f; 
-            if (Physics.Raycast(raycastStart, transform.forward, out hit, _assassinationManager.maxRange, _rhythmManager.guardMask))
-            {
-                GuardRhythmPatrol targetGuard = hit.collider.GetComponent<GuardRhythmPatrol>();
-                if (targetGuard != null)
-                {
-                    _assassinationManager.ExecuteRangedAssassination(targetGuard);
-                    if (_isCurrentComboPerfect)
-                    {
-                         int currentBeat = _rhythmManager.currentBeatCount;
-                         int newCooldownEnd = _skillCooldowns[skill] - 12; 
-                         _skillCooldowns[skill] = Mathf.Max(currentBeat, newCooldownEnd); 
-                    }
-                }
-            }
-            SetSkillCooldown(skill);
-        }
+        
+        ResetInputSequence(); // 스킬 발동 후 초기화
     }
 
     // --- 쿨타임 관리 로직 ---
-    bool IsSkillOnCooldown(ConstellationSkillData skill)
+    public bool IsSkillOnCooldown(ConstellationSkillData skill)
     {
-        if (_skillCooldowns.ContainsKey(skill) && _skillCooldowns[skill] > _rhythmManager.currentBeatCount) { return true; }
-        return false;
+        return _skillCooldowns.ContainsKey(skill) && _skillCooldowns[skill] > 0;
     }
 
-    void SetSkillCooldown(ConstellationSkillData skill)
+    public void SetSkillCooldown(ConstellationSkillData skill, int beats)
     {
-        if (skill.cooldownBeats > 0) { _skillCooldowns[skill] = _rhythmManager.currentBeatCount + skill.cooldownBeats; }
+        _skillCooldowns[skill] = _rhythmManager.currentBeatCount + beats;
     }
     
-    void CheckCooldowns(int currentBeat) {} // 쿨타임 확인은 IsSkillOnCooldown에서만 사용
-
-    // UIManager 연동을 위한 PUBLIC 함수
     public int GetRemainingCooldown(ConstellationSkillData skill)
     {
         if (_skillCooldowns.ContainsKey(skill))
         {
-            return Mathf.Max(0, _skillCooldowns[skill] - _rhythmManager.currentBeatCount);
+            return _skillCooldowns[skill] - _rhythmManager.currentBeatCount;
         }
         return 0;
+    }
+    
+    public void CheckAllCooldowns(int currentBeat)
+    {
+        // 쿨타임은 자동으로 0 이하로 내려가므로 별도 처리 불필요
+        // UI 업데이트를 위해 Dictionary를 순회할 수는 있음
+        
+        // Dictionary에서 만료된 쿨타임을 제거하는 로직 (선택적 최적화)
+        var keysToRemove = _skillCooldowns.Keys.Where(key => _skillCooldowns[key] <= currentBeat).ToList();
+        foreach (var key in keysToRemove)
+        {
+            _skillCooldowns.Remove(key);
+        }
     }
 }
