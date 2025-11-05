@@ -50,7 +50,6 @@ public class MusicManager : MonoBehaviour
         if (calculatedBeat >= _rhythmManager.currentBeatCount)
         {
             _rhythmManager.currentBeatCount = calculatedBeat;
-            _rhythmManager.NotifyBeatElapsed(); 
         }
     }
 }

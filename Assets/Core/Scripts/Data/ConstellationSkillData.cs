@@ -1,9 +1,10 @@
 using UnityEngine;
 
+public enum SkillCategory { Attack, Lure, Stealth, Movement }
+
 [CreateAssetMenu(fileName = "NewSkill", menuName = "Star Assassin/Loadout Skill Data")]
 public class ConstellationSkillData : ScriptableObject
 {
-    public enum SkillCategory { Attack, Lure, Stealth, Movement }
     
     [Header("★ 기본 정보")]
     public string skillName;

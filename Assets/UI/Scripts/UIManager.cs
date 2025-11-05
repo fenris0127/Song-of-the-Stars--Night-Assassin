@@ -1,112 +1,111 @@
 using UnityEngine;
-using UnityEngine.UI;
 using System.Collections.Generic;
+using UnityEngine.UI; // ★ UI 관련 컴포넌트 사용을 위해 추가
+using TMPro; // ★ TextMeshPro 사용 시 추가
 
+/// <summary>
+/// 게임 UI (스킬 아이콘, Focus 바, 경보 레벨 등)를 관리합니다.
+/// </summary>
 public class UIManager : MonoBehaviour
 {
-    [Header("Text & Bars")]
-    public Text beatCounterText;
-    public Text alertLevelText;
-    public GameObject skillIconPrefab; 
-    public Transform skillIconContainer; 
+    private RhythmPatternChecker _rhythmChecker;
+    private SkillLoadoutManager _loadoutManager; 
     
-    [Header("Judgment Feedback")]
-    public Text judgmentText;
-    public Color perfectColor = Color.yellow; 
-    public Color otherColor = Color.white; 
-
-    private RhythmSyncManager _rhythmManager;
-    private MissionManager _missionManager;
-    private RhythmPatternChecker _patternChecker;
+    [Header("▶ UI 오브젝트")]
+    public GameObject skillIconPrefab;
+    public Transform skillIconContainer;
+    public TextMeshProUGUI judgmentText; // ★ 판정 텍스트 표시용 (TextMeshProG UI 컴포넌트 필요)
+    public float judgmentDisplayDuration = 0.5f; // ★ 판정 텍스트 표시 시간
     
-    private Dictionary<ConstellationSkillData, GameObject> _skillIconMap = new Dictionary<ConstellationSkillData, GameObject>();
+    public Dictionary<ConstellationSkillData, GameObject> _skillIconMap = 
+        new Dictionary<ConstellationSkillData, GameObject>(); 
 
+    // --- Unity Life Cycle ---
     void Start()
     {
-        _rhythmManager = FindObjectOfType<RhythmSyncManager>();
-        _missionManager = FindObjectOfType<MissionManager>();
-        _patternChecker = FindObjectOfType<RhythmPatternChecker>();
-
-        if (_rhythmManager != null)
-            _rhythmManager.OnBeatCounted.AddListener(UpdateBeatUI);
-
-        if (_missionManager != null)
-            _missionManager.OnAlertLevelChanged.AddListener(UpdateAlertUI); 
-            
-        InitializeSkillIcons();
-        UpdateAlertUI(); 
-        if (judgmentText != null) judgmentText.gameObject.SetActive(false);
+        _rhythmChecker = FindObjectOfType<RhythmPatternChecker>();
+        _loadoutManager = FindObjectOfType<SkillLoadoutManager>(); 
+        
+        InitializeSkillIcons(); 
+        
+        // ★ TODO 구현: 판정 텍스트 초기화
+        if (judgmentText != null)
+        {
+            judgmentText.gameObject.SetActive(false);
+        }
     }
 
+    void Update()
+    {
+        UpdateSkillCooldowns();
+    }
+    
+    // --- 스킬 UI 초기화 ---
     void InitializeSkillIcons()
     {
-        if (_patternChecker == null || skillIconPrefab == null || skillIconContainer == null) return;
+        if (_loadoutManager == null || skillIconPrefab == null || skillIconContainer == null) return;
         
-        foreach (var skill in _patternChecker.allSkills)
+        foreach (var pair in _loadoutManager.activeSkills)
         {
-            GameObject icon = Instantiate(skillIconPrefab, skillIconContainer);
-            _skillIconMap.Add(skill, icon);
+            KeyCode key = pair.Key; // ★ 키 정보
+            ConstellationSkillData skill = pair.Value;
+            
+            GameObject iconObject = Instantiate(skillIconPrefab, skillIconContainer);
+            
+            // ★ TODO 구현: 생성된 아이콘에 SkillData.icon과 KeyCode를 표시
+            SkillIconUI iconUI = iconObject.GetComponent<SkillIconUI>(); // SkillIconUI라는 보조 스크립트가 필요합니다 (아래 참조).
+            if (iconUI != null)
+            {
+                iconUI.Setup(skill.icon, key.ToString().Replace("Alpha", ""), skill.skillName);
+            }
+
+            _skillIconMap.Add(skill, iconObject); 
         }
     }
-
-    public void UpdateBeatUI(int currentBeat)
+    
+    // --- 쿨타임 업데이트 로직 ---
+    void UpdateSkillCooldowns()
     {
-        if (beatCounterText != null)
-            beatCounterText.text = $"Beat: {currentBeat}";
-            
-        foreach (var pair in _skillIconMap)
+        if (_rhythmChecker == null || _loadoutManager == null) return;
+
+        foreach (var skillPair in _loadoutManager.activeSkills)
         {
-            ConstellationSkillData skill = pair.Key;
-            GameObject icon = pair.Value;
-            
-            int remainingBeats = _patternChecker.GetRemainingCooldown(skill);
-            
-            Image iconImage = icon.GetComponent<Image>();
-            Text iconText = icon.GetComponentInChildren<Text>(); 
-            
-            if (iconImage != null)
+            ConstellationSkillData skill = skillPair.Value;
+
+            if (_skillIconMap.ContainsKey(skill))
             {
-                if (remainingBeats > 0)
+                GameObject iconObject = _skillIconMap[skill];
+                int remainingBeats = _rhythmChecker.GetRemainingCooldown(skill);
+                
+                SkillIconUI iconUI = iconObject.GetComponent<SkillIconUI>();
+                if (iconUI != null)
                 {
-                    iconImage.color = Color.gray; 
+                    iconUI.UpdateCooldown(remainingBeats);
                 }
-                else
-                {
-                    iconImage.color = Color.white; 
-                }
-            }
-            if (iconText != null)
-            {
-                iconText.text = remainingBeats > 0 ? remainingBeats.ToString() : "";
             }
         }
     }
-
-    public void UpdateAlertUI()
+    
+    // --- 판정 결과 표시 함수 ---
+    public void ShowJudgment(string judgmentTextString)
     {
-        if (_missionManager != null && alertLevelText != null)
-            alertLevelText.text = $"ALERT: {_missionManager.currentAlertLevel} / {_missionManager.maxAlertLevel}";
-    }
-
-    public void ShowJudgment(string judgment)
-    {
+        // ★ TODO 구현: 화면 중앙에 Perfect, Great 등의 텍스트를 잠시 띄우는 로직 구현
         if (judgmentText != null)
         {
-            judgmentText.text = judgment;
-            judgmentText.color = (judgment == "Perfect") ? perfectColor : otherColor;
+            judgmentText.text = judgmentTextString;
             judgmentText.gameObject.SetActive(true);
             
-            // 시각적 강조 애니메이션 (LeanTween 없이 임시로 Scale 조정)
-            judgmentText.transform.localScale = Vector3.one * 1.5f;
-            
-            CancelInvoke("HideJudgment");
-            Invoke("HideJudgment", 0.8f); 
+            // 지정된 시간 후 텍스트 비활성화
+            CancelInvoke(nameof(HideJudgmentText));
+            Invoke(nameof(HideJudgmentText), judgmentDisplayDuration);
         }
     }
 
-    private void HideJudgment()
+    private void HideJudgmentText()
     {
         if (judgmentText != null)
+        {
             judgmentText.gameObject.SetActive(false);
+        }
     }
 }
