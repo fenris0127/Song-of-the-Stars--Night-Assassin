@@ -10,6 +10,7 @@ public class UIManager : MonoBehaviour
 {
     private RhythmPatternChecker _rhythmChecker;
     private SkillLoadoutManager _loadoutManager; 
+    private MissionManager _missionManager; 
     
     [Header("▶ UI 오브젝트")]
     public GameObject skillIconPrefab;
@@ -17,14 +18,26 @@ public class UIManager : MonoBehaviour
     public TextMeshProUGUI judgmentText; // ★ 판정 텍스트 표시용 (TextMeshProG UI 컴포넌트 필요)
     public float judgmentDisplayDuration = 0.5f; // ★ 판정 텍스트 표시 시간
     
-    public Dictionary<ConstellationSkillData, GameObject> _skillIconMap = 
-        new Dictionary<ConstellationSkillData, GameObject>(); 
+    [Header("▶ 경보 레벨 UI")]
+    public Image alertBarFill;
+    public TextMeshProUGUI alertLevelText;
+    
+    [Header("▶ 발각 진행도 UI")]
+    public GameObject detectionWarning; // "!" 경고 아이콘
+    public Image detectionProgressBar; // 발각 진행도 바
 
-    // --- Unity Life Cycle ---
+    [Header("▶ Focus UI")]
+    public Image focusBarFill;
+    
+    public Dictionary<ConstellationSkillData, GameObject> _skillIconMap = 
+        new Dictionary<ConstellationSkillData, GameObject>();
+
+
     void Start()
     {
         _rhythmChecker = FindObjectOfType<RhythmPatternChecker>();
         _loadoutManager = FindObjectOfType<SkillLoadoutManager>(); 
+        _missionManager = FindObjectOfType<MissionManager>();
         
         InitializeSkillIcons(); 
         

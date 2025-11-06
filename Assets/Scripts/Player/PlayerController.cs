@@ -171,7 +171,11 @@ public class PlayerController : MonoBehaviour
 
         if (inputDir.magnitude > 0)
         {
-            _rigidbody.MovePosition(_rigidbody.position + inputDir * moveSpeed * Time.deltaTime * 0.5f);
+           Vector2 intendedPosition = _rigidbody.position + inputDir * moveSpeed * Time.deltaTime * 0.5f;
+            
+            // 장애물 체크
+            if (!CheckForObstacle(intendedPosition))
+                _rigidbody.MovePosition(intendedPosition);
 
             float angle = Vector2.SignedAngle(Vector2.up, inputDir);
             transform.rotation = Quaternion.Euler(0, 0, angle);

@@ -26,18 +26,28 @@ public class GuardRhythmPatrol : MonoBehaviour
     [Header("▶ 시야 및 상태")]
     public float viewDistance = 10f;
     public float viewAngle = 100f;
+    public float decoyDetectionRange = 15f; // 데코이 전용 감지 범위 (시야보다 넓음)
     public bool isFixedGuard = false;
+
+    [Header("▶ 발각 시스템")]
+    public bool useGradualDetection = true; // true: 단계적 경보, false: 즉시 실패
+    public int detectionAlertIncrease = 2; // 발각 시 경보 증가량
+    private float _detectionTime = 0f; // 플레이어를 본 시간
+    public float timeToFullDetection = 2f; // 완전 발각까지 걸리는 시간 (초)
 
     private bool _isParalyzed = false;
     private int _paralysisEndBeat = 0;
-    private bool _isFlashed = false; 
+    private bool _isFlashed = false;
     private int _flashEndBeat = 0;   
+    
+    private bool _isInSearchMode = false; 
+    private int _searchEndBeat = 0;
+    private const int SEARCH_DURATION_BEATS = 8;
 
     private GameObject _activeDecoy = null; 
     private Vector2 _lastDecoyPosition; 
     #endregion
 
-    // --- Unity Life Cycle ---
     void Start()
     {
         _rhythmManager = FindObjectOfType<RhythmSyncManager>();
@@ -230,6 +240,16 @@ public class GuardRhythmPatrol : MonoBehaviour
     }
     
     // --- 생명 주기 및 제거 ---
+
+    /// <summary>
+    /// UI를 위한 발각 진행도 반환 (0~1)
+    /// </summary>
+    public float GetDetectionProgress()
+    {
+        if (!useGradualDetection || timeToFullDetection <= 0f) return 0f;
+        
+        return Mathf.Clamp01(_detectionTime / timeToFullDetection);
+    }
     
     /// <summary>
     /// 경비병을 씬에서 제거하고 필요한 정리 작업을 수행합니다.

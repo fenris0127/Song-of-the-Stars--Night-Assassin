@@ -13,6 +13,9 @@ public class RhythmSyncManager : MonoBehaviour
     public float beatInterval; // 60 / BPM
     public float beatTolerance = 0.1f; // 판정 허용 시간 (초)
     public float perfectTolerance = 0.05f; // Perfect 판정 허용 시간 (초)
+
+    [Header("▶ 동기화 모드")]
+    public bool useMusicManagerSync = true; // true: MusicManager가 비트 제어, false: 자체 타이머
     
     [Header("▶ 레이어 마스크 (2D)")]
     public LayerMask obstacleMask; 

@@ -10,8 +10,9 @@ public class RhythmPatternChecker : MonoBehaviour
     #region 컴포넌트 및 참조
     private RhythmSyncManager _rhythmManager;
     private UIManager _uiManager; 
-    private PlayerController _playerController; 
+    private PlayerController _playerController;
     private SkillLoadoutManager _loadoutManager; 
+    private PlayerAssassination _playerAssassination;
     #endregion
     
     #region Focus 시스템
@@ -36,6 +37,7 @@ public class RhythmPatternChecker : MonoBehaviour
         _uiManager = FindObjectOfType<UIManager>();
         _playerController = GetComponent<PlayerController>();
         _loadoutManager = GetComponent<SkillLoadoutManager>();
+        _playerAssassination = GetComponent<PlayerAssassination>();
 
         if (_rhythmManager != null)
         {
@@ -50,42 +52,72 @@ public class RhythmPatternChecker : MonoBehaviour
             HandleRhythmInput();
         }
     }
-    
+
     // --- 입력 및 판정 로직 ---
     void HandleRhythmInput()
     {
         if (_loadoutManager == null) return;
-        
+
         // 스킬 입력 (1, 2, 3, 4 키)
         foreach (var pair in _loadoutManager.activeSkills)
         {
             KeyCode key = pair.Key;
-            
+
             if (Input.GetKeyDown(key))
             {
                 RhythmJudgment judgment = _rhythmManager.CheckJudgment();
-                if (_uiManager != null) 
-                    _uiManager.ShowJudgment(judgment.ToString()); 
+                if (_uiManager != null)
+                    _uiManager.ShowJudgment(judgment.ToString());
+
+                if (SFXManager.Instance != null)
+                {
+                    switch (judgment)
+                    {
+                        case RhythmJudgment.Perfect:
+                            SFXManager.Instance.PlayPerfectSound();
+                            break;
+                        case RhythmJudgment.Great:
+                            SFXManager.Instance.PlayGreatSound();
+                            break;
+                        case RhythmJudgment.Miss:
+                            SFXManager.Instance.PlayMissSound();
+                            break;
+                    }
+                }
 
                 if (judgment == RhythmJudgment.Miss)
                 {
                     ResetInputSequence();
                     return;
                 }
-                
+
                 if (judgment == RhythmJudgment.Perfect)
                     currentFocus = Mathf.Min(maxFocus, currentFocus + focusPerPerfect);
                 else
                     _isCurrentComboPerfect = false;
-                
+
                 if (_currentActiveSkillKey == KeyCode.None || _currentActiveSkillKey == key)
                     ContinueSkillSequence(key);
                 else
                     StartNewSkillSequence(key);
-                
+
                 break;
             }
         }
+    }
+    
+    public void SetSkillCooldown(ConstellationSkillData skill, int beats)
+    {
+        if (_rhythmManager == null) return;
+
+        // 난이도 배수 적용
+        int adjustedBeats = beats;
+        if (DifficultyManager.Instance != null)
+        {
+            adjustedBeats = DifficultyManager.Instance.ApplyCooldownMultiplier(beats);
+        }
+        
+        _skillCooldowns[skill] = _rhythmManager.currentBeatCount + adjustedBeats;
     }
     
     // --- 스킬 시퀀스 관리 ---
@@ -125,8 +157,6 @@ public class RhythmPatternChecker : MonoBehaviour
         }
     }
     
-    // RhythmPatternChecker.cs 내부 (ActivateSkill 함수 아래에 추가)
-
     /// <summary>
     /// 플레이어 주변의 가장 가까운 경비병을 찾아 섬광 효과를 적용합니다.
     /// </summary>
@@ -164,9 +194,7 @@ public class RhythmPatternChecker : MonoBehaviour
             closestGuard.ApplyFlash(durationInBeats);
         }
         else
-        {
             Debug.Log("주변에 섬광탄을 맞출 경비병이 없습니다.");
-        }
     }
 
     void ResetInputSequence()
