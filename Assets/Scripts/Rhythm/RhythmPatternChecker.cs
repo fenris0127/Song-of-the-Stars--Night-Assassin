@@ -244,12 +244,12 @@ public class RhythmPatternChecker : MonoBehaviour
     // --- 쿨타임 관리 로직 ---
     public bool IsSkillOnCooldown(ConstellationSkillData skill) => _skillCooldowns.ContainsKey(skill) && _skillCooldowns[skill] > 0;
 
-    public void SetSkillCooldown(ConstellationSkillData skill, int beats)
-    {
-        if (_rhythmManager == null) return;
+    // public void SetSkillCooldown(ConstellationSkillData skill, int beats)
+    // {
+    //     if (_rhythmManager == null) return;
 
-        _skillCooldowns[skill] = _rhythmManager.currentBeatCount + beats;
-    }
+    //     _skillCooldowns[skill] = _rhythmManager.currentBeatCount + beats;
+    // }
     
     public int GetRemainingCooldown(ConstellationSkillData skill)
     {

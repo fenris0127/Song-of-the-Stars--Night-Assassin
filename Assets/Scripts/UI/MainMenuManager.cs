@@ -125,7 +125,7 @@ public class MainMenuManager : MonoBehaviour
     void OnNewGame()
     {
         if (SaveSystem.Instance != null)
-            SaveSystem.Instance.currentSave = new SaveSystem.SaveData();
+            SaveSystem.Instance.currentSave = new SaveData();
 
         LoadMission("Tutorial");
     }
@@ -192,7 +192,7 @@ public class MainMenuManager : MonoBehaviour
     void OnDifficultyChanged(int index)
     {
         if (DifficultyManager.Instance != null)
-            DifficultyManager.Instance.SetDifficulty((DifficultyManager.DifficultyLevel)index);
+            DifficultyManager.Instance.SetDifficulty((DifficultyLevel)index);
         
         if (SaveSystem.Instance != null)
         {

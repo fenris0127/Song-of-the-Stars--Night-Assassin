@@ -99,7 +99,7 @@ public class SaveSystem : MonoBehaviour
 
         // DifficultyManager 난이도 적용
         if (DifficultyManager.Instance != null)
-            DifficultyManager.Instance.SetDifficulty((DifficultyManager.DifficultyLevel)currentSave.difficultyLevel);
+            DifficultyManager.Instance.SetDifficulty((DifficultyLevel)currentSave.difficultyLevel);
     }
 
     /// <summary>
@@ -160,32 +160,32 @@ public class SaveSystem : MonoBehaviour
 }
 
 [System.Serializable]
-    public class SaveData
-    {
-        // 게임 진행
-        public int currentMissionIndex = 0;
-        public int[] completedMissions = new int[0];
-        public int totalScore = 0;
-        
-        // 플레이어 설정
-        public float masterVolume = 1f;
-        public float sfxVolume = 0.8f;
-        public float uiVolume = 0.6f;
-        public int difficultyLevel = 1; // 0=Easy, 1=Normal, 2=Hard, 3=Expert
-        
-        // 스킬 언락 (ScriptableObject 이름 저장)
-        public string[] unlockedSkills = new string[0];
-        
-        // 장착 스킬
-        public string equippedStealthSkill = "";
-        public string equippedLureSkill = "";
-        public string equippedMovementSkill = "";
-        public string equippedAttackSkill = "";
-        
-        // 통계
-        public int totalPlayTime = 0; // 초 단위
-        public int perfectCount = 0;
-        public int greatCount = 0;
-        public int missCount = 0;
-        public int guardsDefeated = 0;
-    }
+public class SaveData
+{
+    // 게임 진행
+    public int currentMissionIndex = 0;
+    public int[] completedMissions = new int[0];
+    public int totalScore = 0;
+    
+    // 플레이어 설정
+    public float masterVolume = 1f;
+    public float sfxVolume = 0.8f;
+    public float uiVolume = 0.6f;
+    public int difficultyLevel = 1; // 0=Easy, 1=Normal, 2=Hard, 3=Expert
+    
+    // 스킬 언락 (ScriptableObject 이름 저장)
+    public string[] unlockedSkills = new string[0];
+    
+    // 장착 스킬
+    public string equippedStealthSkill = "";
+    public string equippedLureSkill = "";
+    public string equippedMovementSkill = "";
+    public string equippedAttackSkill = "";
+    
+    // 통계
+    public int totalPlayTime = 0; // 초 단위
+    public int perfectCount = 0;
+    public int greatCount = 0;
+    public int missCount = 0;
+    public int guardsDefeated = 0;
+}
