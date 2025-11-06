@@ -10,3 +10,7 @@
 /Temp
 *.glb
 *.meta
+*.prefab
+*.unity
+*.asset
+*.dwlt

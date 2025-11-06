@@ -21,9 +21,7 @@ public class CapricornTrap : MonoBehaviour
     private void CheckTrapTimeout(int currentBeat)
     {
         if (currentBeat >= _trapEndBeat)
-        {
             DeactivateTrap();
-        }
     }
 
     void OnTriggerEnter(Collider other)
@@ -40,9 +38,8 @@ public class CapricornTrap : MonoBehaviour
     private void DeactivateTrap()
     {
         if (_rhythmManager != null)
-        {
             _rhythmManager.OnBeatCounted.RemoveListener(CheckTrapTimeout);
-        }
+            
         Destroy(gameObject);
     }
 }
