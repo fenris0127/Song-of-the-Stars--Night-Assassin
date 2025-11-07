@@ -1,22 +1,19 @@
 using UnityEngine;
 using UnityEngine.Events;
-// IntGameEvent referenced via fully-qualified name to avoid using-directive issues during compile ordering.
 
 public enum RhythmJudgment { Perfect, Great, Miss }
 
+/// <summary>
+/// 리듬 동기화 및 판정을 관리하는 핵심 매니저
+/// </summary>
 public class RhythmSyncManager : MonoBehaviour
 {
-    // === 판정 열거형 ===
-
     #region 설정 및 이벤트
     [Header("▶ 리듬 설정")]
     public float bpm = 120f;
     public float beatInterval; // 60 / BPM
     public float beatTolerance = 0.1f; // 판정 허용 시간 (초)
     public float perfectTolerance = 0.05f; // Perfect 판정 허용 시간 (초)
-
-    [Header("▶ 동기화 모드")]
-    public bool useMusicManagerSync = true; // true: MusicManager가 비트 제어, false: 자체 타이머
     
     [Header("▶ 레이어 마스크 (2D)")]
     public LayerMask obstacleMask; 
@@ -24,20 +21,18 @@ public class RhythmSyncManager : MonoBehaviour
     
     [Header("▶ 리듬 상태")]
     public int currentBeatCount = 0;
-    private float _songStartTime;
     private float _timeSinceLastBeat;
     
-    public UnityEvent<int> OnBeatCounted; 
-    [Header("▶ ScriptableObject Events (optional)")]
-    [Tooltip("Optional ScriptableObject event that will be raised on each beat. Use IntGameEvent to decouple listeners from the manager instance.")]
-    public IntGameEvent beatGameEvent;
+    public UnityEvent<int> OnBeatCounted;
     #endregion
     
-    void Start()
+    void Awake()
     {
-        beatInterval = 60f / bpm; 
-        _songStartTime = Time.time;
-        _timeSinceLastBeat = 0f;
+        beatInterval = 60f / bpm;
+        
+        // UnityEvent 초기화
+        if (OnBeatCounted == null)
+            OnBeatCounted = new UnityEvent<int>();
     }
 
     void Update()
@@ -50,13 +45,12 @@ public class RhythmSyncManager : MonoBehaviour
             currentBeatCount++;
             
             OnBeatCounted.Invoke(currentBeatCount); 
-            // Raise the ScriptableObject event if assigned so other systems can subscribe without a direct reference
-            if (beatGameEvent != null)
-                beatGameEvent.Raise(currentBeatCount);
         }
     }
     
-    // --- 핵심 기능: 입력 판정 ---
+    /// <summary>
+    /// 입력 타이밍에 대한 판정을 반환합니다.
+    /// </summary>
     public RhythmJudgment CheckJudgment() 
     {
         float timeFromBeatStart = _timeSinceLastBeat; 
@@ -70,5 +64,21 @@ public class RhythmSyncManager : MonoBehaviour
             return RhythmJudgment.Great;
         else
             return RhythmJudgment.Miss;
+    }
+    
+    /// <summary>
+    /// 현재 비트 진행도 (0~1)
+    /// </summary>
+    public float GetBeatProgress()
+    {
+        return _timeSinceLastBeat / beatInterval;
+    }
+    
+    /// <summary>
+    /// 다음 비트까지 남은 시간 (초)
+    /// </summary>
+    public float GetTimeToNextBeat()
+    {
+        return beatInterval - _timeSinceLastBeat;
     }
 }
