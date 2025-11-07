@@ -102,7 +102,7 @@ public class DifficultyManager : MonoBehaviour
         foreach (GuardRhythmPatrol guard in guards)
         {
             guard.viewDistance = settings.guardViewDistance;
-            guard.viewAngle = settings.guardViewAngle;
+            guard.fieldOfViewAngle = settings.guardViewAngle;
             guard.moveSpeed = settings.guardMoveSpeed;
             guard.patrolBeatIntervalMax = settings.guardPatrolInterval;
             guard.timeToFullDetection = settings.detectionTime;

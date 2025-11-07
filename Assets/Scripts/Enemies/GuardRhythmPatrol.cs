@@ -1,14 +1,24 @@
 using UnityEngine;
 using System.Collections.Generic;
 using UnityEngine.Events;
+using UnityEngine.UI;
 
+/// <summary>
+/// 리듬 기반 경비병 순찰 및 탐지 시스템
+/// </summary>
+[RequireComponent(typeof(ProbabilisticDetection))]
 public class GuardRhythmPatrol : MonoBehaviour
 {
     #region 컴포넌트 및 참조
     private RhythmSyncManager _rhythmManager;
     private PlayerController _playerController; 
     private MissionManager _missionManager;
-    private Rigidbody2D _rigidbody; 
+    private Rigidbody2D _rigidbody;
+    private ProbabilisticDetection _detectionSystem;
+
+    public LayerMask ObstacleMask => _rhythmManager?.obstacleMask ?? 0;
+    public Transform Player => _playerController?.transform;
+    public MissionManager missionManager { get { return _missionManager; } }
     #endregion
     
     #region 순찰 및 AI 설정
@@ -24,10 +34,18 @@ public class GuardRhythmPatrol : MonoBehaviour
     private Vector2 _targetPosition; 
     
     [Header("▶ 시야 및 상태")]
+    [Tooltip("시야 거리")]
     public float viewDistance = 10f;
-    public float viewAngle = 100f;
-    public float decoyDetectionRange = 15f; // 데코이 전용 감지 범위 (시야보다 넓음)
+    [Tooltip("시야각 (도)")]
+    public float fieldOfViewAngle = 100f;
+    [Tooltip("데코이 전용 감지 범위 (시야보다 넓음)")]
+    public float decoyDetectionRange = 15f;
+    [Tooltip("고정 경비병 여부")]
     public bool isFixedGuard = false;
+    
+    [Header("▶ 탐지 시스템")]
+    [SerializeField] private ProbabilisticDetection detectionSystem;
+    [SerializeField] private DetectionProbabilityData detectionData;
 
     [Header("▶ 발각 시스템")]
     public bool useGradualDetection = true; // true: 단계적 경보, false: 즉시 실패
@@ -48,12 +66,16 @@ public class GuardRhythmPatrol : MonoBehaviour
     private Vector2 _lastDecoyPosition; 
     #endregion
 
+    // 상태 패턴 관리
+    private GuardState _currentState;
+
     void Start()
     {
-        _rhythmManager = FindObjectOfType<RhythmSyncManager>();
-        _playerController = FindObjectOfType<PlayerController>();
-        _missionManager = FindObjectOfType<MissionManager>();
-        _rigidbody = GetComponent<Rigidbody2D>(); 
+        _rhythmManager = Object.FindFirstObjectByType<RhythmSyncManager>();
+        _playerController = Object.FindFirstObjectByType<PlayerController>();
+        _missionManager = Object.FindFirstObjectByType<MissionManager>();
+        _rigidbody = GetComponent<Rigidbody2D>();
+        _detectionSystem = GetComponent<ProbabilisticDetection>(); 
 
         if (_rigidbody == null)
         {
@@ -148,7 +170,7 @@ public class GuardRhythmPatrol : MonoBehaviour
         
         Vector2 guardForward = transform.up; 
 
-        if (Vector2.Angle(guardForward, directionToPlayer) < viewAngle / 2f && distanceToPlayer <= viewDistance)
+        if (Vector2.Angle(guardForward, directionToPlayer) < fieldOfViewAngle / 2f && distanceToPlayer <= viewDistance)
         {
             RaycastHit2D hit = Physics2D.Raycast(current2DPos, directionToPlayer, viewDistance, _rhythmManager.obstacleMask);
             
@@ -199,22 +221,23 @@ public class GuardRhythmPatrol : MonoBehaviour
     }
     
     // --- 잔상 및 수색 로직 (Decoy, SearchMode 등) ---
-    void CheckForDecoy()
+    public Vector2 lastDecoyPosition => _lastDecoyPosition;
+    public bool CheckForDecoy()
     {
-        if (_activeDecoy != null) return; 
-
-        Collider2D[] hits = Physics2D.OverlapCircleAll(transform.position, viewDistance, _rhythmManager.guardMask); 
+        if (_activeDecoy != null) return false;
+        Collider2D[] hits = Physics2D.OverlapCircleAll(transform.position, viewDistance, _rhythmManager.guardMask);
         foreach (Collider2D hit in hits)
         {
             if (hit.GetComponent<DecoyLifetime>() != null)
             {
                 _activeDecoy = hit.gameObject;
                 _lastDecoyPosition = new Vector2(hit.transform.position.x, hit.transform.position.y);
-                _isPatrolling = false; 
-                _nextMoveBeat = _rhythmManager.currentBeatCount; 
-                return;
+                _isPatrolling = false;
+                _nextMoveBeat = _rhythmManager.currentBeatCount;
+                return true;
             }
         }
+        return false;
     }
 
     void HandleDecoyDistraction()
@@ -269,4 +292,17 @@ public class GuardRhythmPatrol : MonoBehaviour
         // 경비병 오브젝트 파괴
         Destroy(gameObject); 
     }
+
+    // 상태 패턴 관리
+    public void ChangeState(GuardState newState)
+    {
+        if (_currentState != null)
+            _currentState.Exit();
+        _currentState = newState;
+        if (_currentState != null)
+            _currentState.Enter();
+    }
+
+    public bool isFlashed { get => _isFlashed; set => _isFlashed = value; }
+    public bool isParalyzed { get => _isParalyzed; set => _isParalyzed = value; }
 }

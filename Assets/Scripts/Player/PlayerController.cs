@@ -13,6 +13,11 @@ public class PlayerController : MonoBehaviour
     private Rigidbody2D _rigidbody;
     private RhythmSyncManager _rhythmManager;
     private RhythmPatternChecker _rhythmChecker;
+    [Header("▶ Decoupling (optional)")]
+    [Tooltip("Optional ScriptableObject IntGameEvent. If assigned, PlayerController will subscribe to it for beat notifications instead of referencing RhythmSyncManager directly.")]
+    public IntGameEvent beatGameEvent;
+    [Tooltip("Optional ScriptableObject Vector2GameEvent. If assigned, external input systems can raise movement commands via this event.")]
+    public Vector2GameEvent movementCommandEvent;
     #endregion
 
     #region 상태 플래그
@@ -46,10 +51,23 @@ public class PlayerController : MonoBehaviour
 
         _rigidbody.freezeRotation = true;
 
-        if (_rhythmManager != null)
+        // If a ScriptableObject event is assigned, use it (loose coupling).
+        if (beatGameEvent != null)
         {
+            beatGameEvent.OnEvent.AddListener(CheckIllusionTimeout);
+            beatGameEvent.OnEvent.AddListener(ExecuteQueuedMovement);
+        }
+        else if (_rhythmManager != null)
+        {
+            // Backwards compatible: subscribe to the RhythmSyncManager UnityEvent
             _rhythmManager.OnBeatCounted.AddListener(CheckIllusionTimeout);
             _rhythmManager.OnBeatCounted.AddListener(ExecuteQueuedMovement);
+        }
+
+        // If an external movement command event is provided, subscribe to it to receive movement directions
+        if (movementCommandEvent != null)
+        {
+            movementCommandEvent.OnEvent.AddListener(EnqueueMovementDirection);
         }
 
         _targetPosition = new Vector2(transform.position.x, transform.position.y);
@@ -87,6 +105,17 @@ public class PlayerController : MonoBehaviour
         else if (Input.GetKeyDown(KeyCode.D)) direction = Vector2.right;
 
         if (direction != Vector2.zero) _queuedDirection = direction;
+    }
+
+    /// <summary>
+    /// External movement command handler for ScriptableObject-driven input.
+    /// Subscribed when `movementCommandEvent` is provided.
+    /// </summary>
+    private void EnqueueMovementDirection(Vector2 direction)
+    {
+        if (_isCharging || _queuedDirection != Vector2.zero || isFreeMoving) return;
+        if (direction == Vector2.zero) return;
+        _queuedDirection = direction;
     }
 
     void ExecuteQueuedMovement(int currentBeat)

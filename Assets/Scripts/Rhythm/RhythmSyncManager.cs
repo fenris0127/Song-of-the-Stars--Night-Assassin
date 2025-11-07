@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.Events;
+// IntGameEvent referenced via fully-qualified name to avoid using-directive issues during compile ordering.
 
 public enum RhythmJudgment { Perfect, Great, Miss }
 
@@ -27,6 +28,9 @@ public class RhythmSyncManager : MonoBehaviour
     private float _timeSinceLastBeat;
     
     public UnityEvent<int> OnBeatCounted; 
+    [Header("▶ ScriptableObject Events (optional)")]
+    [Tooltip("Optional ScriptableObject event that will be raised on each beat. Use IntGameEvent to decouple listeners from the manager instance.")]
+    public IntGameEvent beatGameEvent;
     #endregion
     
     void Start()
@@ -46,6 +50,9 @@ public class RhythmSyncManager : MonoBehaviour
             currentBeatCount++;
             
             OnBeatCounted.Invoke(currentBeatCount); 
+            // Raise the ScriptableObject event if assigned so other systems can subscribe without a direct reference
+            if (beatGameEvent != null)
+                beatGameEvent.Raise(currentBeatCount);
         }
     }
     
