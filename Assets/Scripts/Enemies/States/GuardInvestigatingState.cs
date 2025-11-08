@@ -2,6 +2,8 @@ using UnityEngine;
 
 public class GuardInvestigatingState : GuardState
 {
+    protected MissionManager MissionManager => guard.missionManager;
+
     private Vector2 investigatePosition;
     private float investigationStartTime;
     private const float INVESTIGATION_DURATION = 3f;
@@ -54,9 +56,9 @@ public class GuardInvestigatingState : GuardState
     public override void OnBeat(int currentBeat)
     {
         // 리듬에 맞춰 경계 레벨 약간 증가
-        missionManager?.IncreaseAlertLevel(1);
+        MissionManager?.IncreaseAlertLevel(1);
     }
 
     // GuardRhythmPatrol의 missionManager 접근용
-    protected MissionManager missionManager => guard.missionManager;
+    
 }

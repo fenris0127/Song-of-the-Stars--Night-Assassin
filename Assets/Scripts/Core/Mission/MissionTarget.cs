@@ -6,13 +6,10 @@ using UnityEngine;
 public class MissionTarget : MonoBehaviour
 {
     private MissionManager MissionManager => GameServices.MissionManager;
-    private MissionManager _missionManager;
 
     void Start()
     {
-        _missionManager = FindObjectOfType<MissionManager>();
-        
-        if (_missionManager == null)
+        if (MissionManager == null)
             Debug.LogError("MissionTarget: MissionManager를 찾을 수 없습니다!");
     }
 

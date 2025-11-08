@@ -5,7 +5,7 @@ using UnityEngine;
 /// </summary>
 public class PlayerStealth : MonoBehaviour
 {
-    private PlayerController _playerController;
+    private PlayerController Player => GameServices.Player;
     private float _originalMoveSpeed;
     private SpriteRenderer _spriteRenderer; // ★ 추가: 투명도 조절용
     
@@ -16,11 +16,10 @@ public class PlayerStealth : MonoBehaviour
     
     void Start()
     {
-        _playerController = GetComponent<PlayerController>();
         _spriteRenderer = GetComponent<SpriteRenderer>(); // ★ 초기화
 
-        if (_playerController != null)
-            _originalMoveSpeed = _playerController.moveSpeed;
+        if (Player != null)
+            _originalMoveSpeed = Player.moveSpeed;
     }
     
     /// <summary>
@@ -30,11 +29,11 @@ public class PlayerStealth : MonoBehaviour
     {
         isStealthActive = !isStealthActive;
 
-        if (_playerController != null)
+        if (Player != null)
         {
             if (isStealthActive)
             {
-                _playerController.moveSpeed = _originalMoveSpeed * stealthMoveSpeedMultiplier;
+                Player.moveSpeed = _originalMoveSpeed * stealthMoveSpeedMultiplier;
                 Debug.Log("스텔스 활성화: 이동 속도 감소");
                 
                 if (_spriteRenderer != null)
@@ -46,7 +45,7 @@ public class PlayerStealth : MonoBehaviour
             }
             else
             {
-                _playerController.moveSpeed = _originalMoveSpeed;
+                Player.moveSpeed = _originalMoveSpeed;
                 Debug.Log("스텔스 비활성화: 이동 속도 복구");
                 
                 if (_spriteRenderer != null)

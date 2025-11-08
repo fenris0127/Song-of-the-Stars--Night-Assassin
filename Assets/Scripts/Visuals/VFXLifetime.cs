@@ -5,7 +5,6 @@ using UnityEngine;
 /// </summary>
 public class VFXLifetime : MonoBehaviour
 {
-    private RhythmSyncManager _rhythmManager;
     private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
     private bool _isTimeBasedLifetime = false;
     
@@ -26,13 +25,11 @@ public class VFXLifetime : MonoBehaviour
     public void Initialize()
     {
         if (_isInitialized) return;
-        
-        _rhythmManager = FindObjectOfType<RhythmSyncManager>();
-        
-        if (useBeatDuration && _rhythmManager != null)
+    
+        if (useBeatDuration && RhythmManager != null)
         {
-            _endBeat = _rhythmManager.currentBeatCount + durationInBeats;
-            _rhythmManager.OnBeatCounted.AddListener(CheckBeatTimeout);
+            _endBeat = RhythmManager.currentBeatCount + durationInBeats;
+            RhythmManager.OnBeatCounted.AddListener(CheckBeatTimeout);
         }
         else
             _endTime = Time.time + durationInSeconds;
@@ -45,16 +42,13 @@ public class VFXLifetime : MonoBehaviour
     /// </summary>
     public void SetBeatDuration(int beats)
     {
-        if (_rhythmManager == null)
-            _rhythmManager = FindObjectOfType<RhythmSyncManager>();
-            
         useBeatDuration = true;
         durationInBeats = beats;
         
-        if (_rhythmManager != null)
+        if (RhythmManager != null)
         {
-            _endBeat = _rhythmManager.currentBeatCount + beats;
-            _rhythmManager.OnBeatCounted.AddListener(CheckBeatTimeout);
+            _endBeat = RhythmManager.currentBeatCount + beats;
+            RhythmManager.OnBeatCounted.AddListener(CheckBeatTimeout);
         }
     }
     
@@ -85,15 +79,15 @@ public class VFXLifetime : MonoBehaviour
 
     void DestroyVFX()
     {
-        if (_rhythmManager != null)
-            _rhythmManager.OnBeatCounted.RemoveListener(CheckBeatTimeout);
+        if (RhythmManager != null)
+            RhythmManager.OnBeatCounted.RemoveListener(CheckBeatTimeout);
             
         Destroy(gameObject);
     }
     
     void OnDestroy()
     {
-        if (_rhythmManager != null)
-            _rhythmManager.OnBeatCounted.RemoveListener(CheckBeatTimeout);
+        if (RhythmManager != null)
+            RhythmManager.OnBeatCounted.RemoveListener(CheckBeatTimeout);
     }
 }

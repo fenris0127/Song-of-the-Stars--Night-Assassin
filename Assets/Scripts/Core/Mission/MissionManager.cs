@@ -14,7 +14,6 @@ public class MissionManager : MonoBehaviour
     [Header("▶ 게임 상태")]
     public bool isMissionActive = true;
     
-    
     public void IncreaseAlertLevel(int amount)
     {
         if (!isMissionActive) return;

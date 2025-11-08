@@ -8,13 +8,12 @@ using System.Linq;
 public class RhythmPatternChecker : MonoBehaviour
 {
     #region 컴포넌트 및 참조 (최적화: 캐싱)
-    private PlayerController _playerController;
-    private PlayerAssassination _playerAssassination;
-    
     // ⭐ 최적화: GameServices 사용 (FindObjectOfType 제거)
     private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
     private UIManager UI => GameServices.UIManager;
     private SkillLoadoutManager LoadoutManager => GameServices.SkillLoadout;
+    private PlayerAssassination PlayerAssassination => GameServices.PlayerAssassination;
+    private PlayerController Player => GameServices.Player;
     #endregion
     
     #region Focus 시스템
@@ -44,12 +43,6 @@ public class RhythmPatternChecker : MonoBehaviour
     private Collider2D[] _guardCheckResults = new Collider2D[20];
     #endregion
 
-    void Awake()
-    {
-        _playerController = GetComponent<PlayerController>();
-        _playerAssassination = GetComponent<PlayerAssassination>();
-    }
-
     void Start()
     {
         if (RhythmManager != null)
@@ -60,7 +53,7 @@ public class RhythmPatternChecker : MonoBehaviour
 
     void Update()
     {
-        if (_playerController != null && !_playerController.isFreeMoving)
+        if (Player != null && !Player.isFreeMoving)
             HandleRhythmInput();
     }
 
@@ -242,21 +235,46 @@ public class RhythmPatternChecker : MonoBehaviour
         
         SetSkillCooldown(skill, actualCooldown);
 
-        if (_playerController == null) return;
+        if (Player == null) return;
 
         switch (skill.category)
         {
             case SkillCategory.Stealth:
-                _playerController.GetComponent<PlayerStealth>()?.ToggleStealth();
+                GameServices.PlayerStealth?.ToggleStealth();
                 break;
             case SkillCategory.Lure:
-                _playerController.ActivateIllusion(5);
+                Player.ActivateIllusion(5);
                 break;
             case SkillCategory.Movement:
-                _playerController.ActivateCharge(skill.inputCount * _playerController.moveDistance);
+                Player.ActivateCharge(skill.inputCount * Player.moveDistance);
                 break;
             case SkillCategory.Attack:
-                ApplyFlashToClosestGuard(3);
+                // 입력 시퀀스 수에 따라 다른 공격 스킬 발동
+                if (_inputSequenceCount == 1)
+                {
+                    // 1회 입력: 근접 암살 시도
+                    var target = PlayerAssassination.FindGuardInAssassinationRange();
+                    if (target != null)
+                    {
+                        PlayerAssassination.ExecuteAssassinationStrike(target);
+                        Debug.Log("근접 암살 시도!");
+                    }
+                }
+                else if (_inputSequenceCount == 2)
+                {
+                    // 2회 입력: 원거리 암살 시도
+                    var target = PlayerAssassination.FindGuardInRangedRange();
+                    if (target != null)
+                    {
+                        PlayerAssassination.ExecuteRangedAssassination(target);
+                        Debug.Log("원거리 암살 시도!");
+                    }
+                }
+                else
+                {
+                    // 3회 입력: 섬광탄 효과
+                    ApplyFlashToClosestGuard(3);
+                }
                 break;
         }
         

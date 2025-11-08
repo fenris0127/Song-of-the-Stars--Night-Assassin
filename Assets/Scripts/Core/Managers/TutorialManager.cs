@@ -12,15 +12,13 @@ public enum TutorialTrigger
     OnMissionStart   // 미션 시작 시
 }
 
-
 /// <summary>
 /// 튜토리얼 단계를 관리하고 가이드를 표시합니다.
 /// </summary>
 public class TutorialManager : MonoBehaviour
 {
-    private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
-    private PlayerController Player => GameServices.Player;
-
+    // private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
+    // private PlayerController Player => GameServices.Player;
 
     [Header("▶ UI 요소")]
     public GameObject tutorialPanel;
@@ -38,9 +36,6 @@ public class TutorialManager : MonoBehaviour
     [Header("▶ 인게임 가이드")]
     public GameObject beatIndicatorHighlight;
     public GameObject skillIconHighlight;
-
-    private RhythmSyncManager _rhythmManager;
-    private PlayerController _playerController;
 
     void Start()
     {

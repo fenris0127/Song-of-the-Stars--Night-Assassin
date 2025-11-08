@@ -9,15 +9,8 @@ public class PlayerAssassination : MonoBehaviour
 
     private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
 
-    // private RhythmSyncManager _rhythmManager;
-
     private Collider2D[] _assassinationResults = new Collider2D[10];
 
-
-    // void Start()
-    // {
-    //     _rhythmManager = FindObjectOfType<RhythmSyncManager>();
-    // }
 
     /// <summary>
     /// 근접 암살 범위 내의 경비병을 찾습니다 (2D)
