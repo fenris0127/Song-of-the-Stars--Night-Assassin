@@ -15,20 +15,26 @@ public class BeatVisualizer : MonoBehaviour
     public RectTransform judgmentZone; // Perfect 판정 영역 표시
     public RectTransform movingIndicator; // 현재 타이밍을 나타내는 바
     public float indicatorWidth = 800f;
+
+    private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
+    // private RhythmSyncManager _rhythmManager;
     
-    private RhythmSyncManager _rhythmManager;
+    private float _halfIndicatorWidth;
+    private float _perfectZoneWidthCache;
+
     private Color _originalColor;
     private float _flashTimer = 0f;
 
     void Start()
     {
-        _rhythmManager = FindObjectOfType<RhythmSyncManager>();
-        
-        if (_rhythmManager != null)
-            _rhythmManager.OnBeatCounted.AddListener(OnBeatFlash);
-        
+        if (RhythmManager != null)
+        RhythmManager.OnBeatCounted.AddListener(OnBeatFlash);
+    
         if (beatIndicator != null)
             _originalColor = beatIndicator.color;
+        
+        // ⭐ 사전 계산
+        _halfIndicatorWidth = indicatorWidth / 2f;
     }
 
     void Update()
@@ -59,27 +65,29 @@ public class BeatVisualizer : MonoBehaviour
 
     void UpdateJudgmentIndicator()
     {
-        if (_rhythmManager == null || movingIndicator == null) return;
-        
-        float beatInterval = _rhythmManager.beatInterval;
-        float timeSinceLastBeat = Time.time - (_rhythmManager.currentBeatCount * beatInterval);
+        if (RhythmManager == null || movingIndicator == null) return;
+    
+        float beatInterval = RhythmManager.beatInterval;
+        float timeSinceLastBeat = Time.time - (RhythmManager.currentBeatCount * beatInterval);
         float progress = timeSinceLastBeat / beatInterval;
         
-        // 판정 영역 내에서 좌우로 이동하는 인디케이터
-        float xPosition = Mathf.Lerp(-indicatorWidth / 2f, indicatorWidth / 2f, progress);
+        // ⭐ 최적화: Lerp 대신 직접 계산
+        float xPosition = (progress * indicatorWidth) - _halfIndicatorWidth;
         movingIndicator.anchoredPosition = new Vector2(xPosition, movingIndicator.anchoredPosition.y);
         
-        // Perfect 판정 영역 표시
         if (judgmentZone != null)
         {
-            float perfectZoneWidth = (_rhythmManager.perfectTolerance / beatInterval) * indicatorWidth;
-            judgmentZone.sizeDelta = new Vector2(perfectZoneWidth * 2f, judgmentZone.sizeDelta.y);
+            if (_perfectZoneWidthCache == 0f)
+            {
+                _perfectZoneWidthCache = (RhythmManager.perfectTolerance / beatInterval) * indicatorWidth * 2f;
+            }
+            judgmentZone.sizeDelta = new Vector2(_perfectZoneWidthCache, judgmentZone.sizeDelta.y);
         }
     }
     
     void OnDestroy()
     {
-        if (_rhythmManager != null)
-            _rhythmManager.OnBeatCounted.RemoveListener(OnBeatFlash);
+        if (RhythmManager != null)
+        RhythmManager.OnBeatCounted.RemoveListener(OnBeatFlash);
     }
 }

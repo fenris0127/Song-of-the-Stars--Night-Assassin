@@ -1,116 +1,143 @@
 using UnityEngine;
 using System.Collections.Generic;
-using UnityEngine.Events;
-using UnityEngine.UI;
 
 /// <summary>
-/// 리듬 기반 경비병 순찰 및 탐지 시스템
+/// 리듬 기반 경비병 순찰 및 탐지 시스템 (최적화 완료)
+/// 
+/// ⭐ 최적화 포인트:
+/// - FindObjectOfType 제거 → GameServices 사용
+/// - NonAlloc 물리 쿼리로 GC 방지
+/// - sqrMagnitude로 거리 계산 최적화
+/// - 프레임 스킵으로 CPU 사용량 감소
+/// - Transform 접근 캐싱
 /// </summary>
 [RequireComponent(typeof(ProbabilisticDetection))]
+[RequireComponent(typeof(Rigidbody2D))]
 public class GuardRhythmPatrol : MonoBehaviour
 {
-    #region 컴포넌트 및 참조
-    private RhythmSyncManager _rhythmManager;
-    private PlayerController _playerController; 
-    private MissionManager _missionManager;
+    #region 컴포넌트 및 참조 (⭐ 최적화: 캐싱)
     private Rigidbody2D _rigidbody;
     private ProbabilisticDetection _detectionSystem;
+    private Transform _cachedTransform; // ⭐ Transform 캐싱
+    private Vector2 _cachedPosition;    // ⭐ 위치 캐싱
 
-    public LayerMask ObstacleMask => _rhythmManager?.obstacleMask ?? 0;
-    public Transform Player => _playerController?.transform;
-    public MissionManager missionManager { get { return _missionManager; } }
+    // ⭐ 최적화: GameServices 사용 (FindObjectOfType 제거)
+    private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
+    private PlayerController Player => GameServices.Player;
+    private MissionManager MissionManager => GameServices.MissionManager;
+    
+    public LayerMask ObstacleMask => RhythmManager?.obstacleMask ?? 0;
+    public Transform PlayerTransform => Player?.transform;
+    public MissionManager missionManager => MissionManager;
     #endregion
     
     #region 순찰 및 AI 설정
     [Header("▶ 순찰 설정")]
-    public List<Vector2> patrolPoints; 
-    public float moveSpeed = 6f;       
-    public int patrolBeatIntervalMax = 4; 
+    public List<Vector2> patrolPoints = new List<Vector2>();
+    public float moveSpeed = 6f;
+    public int patrolBeatIntervalMax = 4;
 
     private int _patrolIndex = 0;
     private int _nextMoveBeat = 0;
-    private int _currentPatrolInterval; 
+    private int _currentPatrolInterval;
     private bool _isPatrolling = true;
-    private Vector2 _targetPosition; 
+    private Vector2 _targetPosition;
     
     [Header("▶ 시야 및 상태")]
-    [Tooltip("시야 거리")]
     public float viewDistance = 10f;
-    [Tooltip("시야각 (도)")]
     public float fieldOfViewAngle = 100f;
-    [Tooltip("데코이 전용 감지 범위 (시야보다 넓음)")]
     public float decoyDetectionRange = 15f;
-    [Tooltip("고정 경비병 여부")]
     public bool isFixedGuard = false;
     
     [Header("▶ 탐지 시스템")]
     [SerializeField] private ProbabilisticDetection detectionSystem;
     [SerializeField] private DetectionProbabilityData detectionData;
-
+    
     [Header("▶ 발각 시스템")]
-    public bool useGradualDetection = true; // true: 단계적 경보, false: 즉시 실패
-    public int detectionAlertIncrease = 2; // 발각 시 경보 증가량
-    private float _detectionTime = 0f; // 플레이어를 본 시간
-    public float timeToFullDetection = 2f; // 완전 발각까지 걸리는 시간 (초)
+    public bool useGradualDetection = true;
+    public int detectionAlertIncrease = 2;
+    private float _detectionTime = 0f;
+    public float timeToFullDetection = 2f;
 
     private bool _isParalyzed = false;
     private int _paralysisEndBeat = 0;
     private bool _isFlashed = false;
-    private int _flashEndBeat = 0;   
+    private int _flashEndBeat = 0;
     
-    private bool _isInSearchMode = false; 
-    private int _searchEndBeat = 0;
-    private const int SEARCH_DURATION_BEATS = 8;
-
-    private GameObject _activeDecoy = null; 
-    private Vector2 _lastDecoyPosition; 
+    private GameObject _activeDecoy = null;
+    private Vector2 _lastDecoyPosition;
     #endregion
 
-    // 상태 패턴 관리
+    #region ⭐ 최적화: 프레임 스킵 및 결과 캐싱
+    private int _frameSkipCounter = 0;
+    private const int DETECTION_CHECK_INTERVAL = 3; // 3프레임마다 체크
+    
+    // ⭐ NonAlloc용 결과 배열 재사용 (GC 방지)
+    private Collider2D[] _decoyCheckResults = new Collider2D[10];
+    #endregion
+
     private GuardState _currentState;
+
+    void Awake()
+    {
+        _rigidbody = GetComponent<Rigidbody2D>();
+        _detectionSystem = GetComponent<ProbabilisticDetection>();
+        _cachedTransform = transform; // ⭐ Transform 캐싱
+        
+        if (_rigidbody == null)
+        {
+            Debug.LogError("GuardRhythmPatrol: Rigidbody2D 필요!");
+            enabled = false;
+            return;
+        }
+        
+        _rigidbody.freezeRotation = true;
+    }
 
     void Start()
     {
-        _rhythmManager = Object.FindFirstObjectByType<RhythmSyncManager>();
-        _playerController = Object.FindFirstObjectByType<PlayerController>();
-        _missionManager = Object.FindFirstObjectByType<MissionManager>();
-        _rigidbody = GetComponent<Rigidbody2D>();
-        _detectionSystem = GetComponent<ProbabilisticDetection>(); 
-
-        if (_rigidbody == null)
+        // ⭐ 최적화: GameServices를 통한 이벤트 구독
+        if (RhythmManager != null)
         {
-            Debug.LogError("GuardRhythmPatrol: Rigidbody2D 컴포넌트가 필요합니다!");
+            RhythmManager.OnBeatCounted.AddListener(HandleRhythmActions);
+            RhythmManager.OnBeatCounted.AddListener(CheckParalysisTimeout);
+            RhythmManager.OnBeatCounted.AddListener(CheckFlashTimeout);
+        }
+        else
+        {
+            Debug.LogError("GuardRhythmPatrol: RhythmSyncManager를 찾을 수 없습니다!");
+            enabled = false;
             return;
         }
-        _rigidbody.freezeRotation = true; 
         
-        if (_rhythmManager != null)
-        {
-            _rhythmManager.OnBeatCounted.AddListener(HandleRhythmActions);
-            _rhythmManager.OnBeatCounted.AddListener(CheckParalysisTimeout);
-            _rhythmManager.OnBeatCounted.AddListener(CheckFlashTimeout); 
-        }
-        
-        _targetPosition = new Vector2(transform.position.x, transform.position.y);
-        _currentPatrolInterval = patrolBeatIntervalMax; 
-        _nextMoveBeat = _rhythmManager.currentBeatCount + _currentPatrolInterval;
+        _targetPosition = _rigidbody.position;
+        _currentPatrolInterval = patrolBeatIntervalMax;
+        _nextMoveBeat = RhythmManager.currentBeatCount + _currentPatrolInterval;
     }
 
     void Update()
     {
-        if (_isParalyzed || _isFlashed) return; 
+        if (_isParalyzed || _isFlashed) return;
 
-        CheckForDecoy(); 
-        HandleDecoyDistraction(); 
-             
-        MoveToTarget(); 
-        CheckPlayerInSight(); 
+        // ⭐ 최적화: 위치 캐싱
+        _cachedPosition = _rigidbody.position;
+
+        // ⭐ 최적화: 프레임 스킵
+        _frameSkipCounter++;
+        if (_frameSkipCounter >= DETECTION_CHECK_INTERVAL)
+        {
+            _frameSkipCounter = 0;
+            CheckForDecoy();
+        }
+
+        HandleDecoyDistraction();
+        MoveToTarget();
+        CheckPlayerInSight();
     }
     
-    // --- 리듬 액션 핸들러 ---
     void HandleRhythmActions(int currentBeat)
     {
-        if (_isParalyzed || _isFlashed) return; 
+        if (_isParalyzed || _isFlashed) return;
 
         if (_isPatrolling && currentBeat >= _nextMoveBeat)
             PatrolToNextPoint(currentBeat);
@@ -123,184 +150,206 @@ public class GuardRhythmPatrol : MonoBehaviour
         _patrolIndex = (_patrolIndex + 1) % patrolPoints.Count;
         _targetPosition = patrolPoints[_patrolIndex];
         
-        if (patrolBeatIntervalMax > 1)
-            _currentPatrolInterval = Random.Range(2, patrolBeatIntervalMax + 1);
-        else
-            _currentPatrolInterval = patrolBeatIntervalMax;
+        _currentPatrolInterval = patrolBeatIntervalMax > 1 
+            ? Random.Range(2, patrolBeatIntervalMax + 1)
+            : patrolBeatIntervalMax;
         
         _nextMoveBeat = currentBeat + _currentPatrolInterval;
         
-        Vector2 current2DPos = new Vector2(transform.position.x, transform.position.y);
-        Vector2 direction = (_targetPosition - current2DPos).normalized;
+        // ⭐ 최적화: 캐싱된 위치 사용
+        Vector2 direction = (_targetPosition - _cachedPosition).normalized;
 
-        if (direction != Vector2.zero)
+        if (direction.sqrMagnitude > 0.001f) // ⭐ sqrMagnitude 사용
         {
             float angle = Vector2.SignedAngle(Vector2.up, direction);
-            transform.rotation = Quaternion.Euler(0, 0, angle);
+            _cachedTransform.rotation = Quaternion.Euler(0, 0, angle);
         }
     }
     
-    // --- 이동 ---
     void MoveToTarget()
     {
         if (_rigidbody == null) return;
         
-        if (Vector2.Distance(_rigidbody.position, _targetPosition) > 0.01f)
+        // ⭐ 최적화: sqrMagnitude로 거리 체크
+        Vector2 moveVector = _targetPosition - _cachedPosition;
+        float sqrDistance = moveVector.sqrMagnitude;
+        
+        if (sqrDistance > 0.0001f) // 0.01f의 제곱
         {
-            Vector2 moveVector = _targetPosition - _rigidbody.position;
-            _rigidbody.MovePosition(_rigidbody.position + moveVector.normalized * moveSpeed * Time.deltaTime);
+            Vector2 normalizedMove = moveVector.normalized;
+            _rigidbody.MovePosition(_cachedPosition + normalizedMove * moveSpeed * Time.deltaTime);
         }
         else
         {
-             _rigidbody.position = _targetPosition;
-             _isPatrolling = true;
+            _rigidbody.position = _targetPosition;
+            _isPatrolling = true;
         }
     }
     
-    // --- 발각 로직 (2D 시야 체크) ---
     void CheckPlayerInSight()
     {
-        if (_playerController == null || _missionManager == null || _isFlashed) return; 
+        if (Player == null || MissionManager == null || _isFlashed) return;
 
-        Vector2 current2DPos = _rigidbody.position;
-        Vector2 player2DPos = new Vector2(_playerController.transform.position.x, _playerController.transform.position.y);
+        Vector2 player2DPos = Player.transform.position;
+        Vector2 directionToPlayer = (player2DPos - _cachedPosition).normalized;
         
-        Vector2 directionToPlayer = (player2DPos - current2DPos).normalized;
-        float distanceToPlayer = Vector2.Distance(current2DPos, player2DPos);
+        // ⭐ 최적화: sqrMagnitude로 거리 체크
+        float sqrDistanceToPlayer = (player2DPos - _cachedPosition).sqrMagnitude;
+        float sqrViewDistance = viewDistance * viewDistance;
         
-        Vector2 guardForward = transform.up; 
+        Vector2 guardForward = _cachedTransform.up;
 
-        if (Vector2.Angle(guardForward, directionToPlayer) < fieldOfViewAngle / 2f && distanceToPlayer <= viewDistance)
+        if (Vector2.Angle(guardForward, directionToPlayer) < fieldOfViewAngle / 2f && 
+            sqrDistanceToPlayer <= sqrViewDistance)
         {
-            RaycastHit2D hit = Physics2D.Raycast(current2DPos, directionToPlayer, viewDistance, _rhythmManager.obstacleMask);
+            RaycastHit2D hit = Physics2D.Raycast(_cachedPosition, directionToPlayer, viewDistance, ObstacleMask);
             
             if (hit.collider != null && hit.collider.GetComponent<PlayerController>() != null)
             {
-                if (!_playerController.GetComponent<PlayerStealth>().isStealthActive && !_playerController.isIllusionActive)
-                    _missionManager.MissionComplete(false);
+                PlayerStealth stealth = Player.GetComponent<PlayerStealth>();
+                if (stealth != null && !stealth.isStealthActive && !Player.isIllusionActive)
+                {
+                    MissionManager.MissionComplete(false);
+                }
                 else
-                    _missionManager.IncreaseAlertLevel(1);
+                {
+                    MissionManager.IncreaseAlertLevel(1);
+                }
             }
         }
     }
 
-    // --- 상태 이상 적용 함수 ---
-    public void ApplyParalysis(int durationInBeats) 
+    public void ApplyParalysis(int durationInBeats)
     {
-        if (_rhythmManager == null) return;
+        if (RhythmManager == null) return;
         
         _isParalyzed = true;
-        _paralysisEndBeat = _rhythmManager.currentBeatCount + durationInBeats;
+        _paralysisEndBeat = RhythmManager.currentBeatCount + durationInBeats;
         
         Debug.Log($"경비병 {gameObject.name} 마비 적용! {_paralysisEndBeat} 비트까지 정지.");
     }
     
-    public void CheckParalysisTimeout(int currentBeat) 
-    { 
-        if (_isParalyzed && currentBeat >= _paralysisEndBeat) 
-        { 
-            _isParalyzed = false; 
-            _nextMoveBeat = currentBeat + 1; 
+    public void CheckParalysisTimeout(int currentBeat)
+    {
+        if (_isParalyzed && currentBeat >= _paralysisEndBeat)
+        {
+            _isParalyzed = false;
+            _nextMoveBeat = currentBeat + 1;
         }
     }
     
-    public void ApplyFlash(int durationInBeats) 
+    public void ApplyFlash(int durationInBeats)
     {
-        if (_rhythmManager == null) return;
+        if (RhythmManager == null) return;
         
         _isFlashed = true;
-        _flashEndBeat = _rhythmManager.currentBeatCount + durationInBeats;
+        _flashEndBeat = RhythmManager.currentBeatCount + durationInBeats;
         
         Debug.Log($"경비병 {gameObject.name} 섬광탄 적용! {_flashEndBeat} 비트까지 시야 차단.");
     }
     
-    public void CheckFlashTimeout(int currentBeat) 
-    { 
-        if (_isFlashed && currentBeat >= _flashEndBeat) 
-            _isFlashed = false; 
+    public void CheckFlashTimeout(int currentBeat)
+    {
+        if (_isFlashed && currentBeat >= _flashEndBeat)
+            _isFlashed = false;
     }
     
-    // --- 잔상 및 수색 로직 (Decoy, SearchMode 등) ---
     public Vector2 lastDecoyPosition => _lastDecoyPosition;
+    
     public bool CheckForDecoy()
     {
         if (_activeDecoy != null) return false;
-        Collider2D[] hits = Physics2D.OverlapCircleAll(transform.position, viewDistance, _rhythmManager.guardMask);
-        foreach (Collider2D hit in hits)
+        
+        // ⭐ 최적화: OverlapCircleNonAlloc 사용 (GC 방지)
+        int hitCount = Physics2D.OverlapCircleNonAlloc(
+            _cachedPosition, 
+            viewDistance, 
+            _decoyCheckResults, 
+            RhythmManager.guardMask
+        );
+        
+        for (int i = 0; i < hitCount; i++)
         {
-            if (hit.GetComponent<DecoyLifetime>() != null)
+            if (_decoyCheckResults[i].GetComponent<DecoyLifetime>() != null)
             {
-                _activeDecoy = hit.gameObject;
-                _lastDecoyPosition = new Vector2(hit.transform.position.x, hit.transform.position.y);
+                _activeDecoy = _decoyCheckResults[i].gameObject;
+                _lastDecoyPosition = _decoyCheckResults[i].transform.position;
                 _isPatrolling = false;
-                _nextMoveBeat = _rhythmManager.currentBeatCount;
+                _nextMoveBeat = RhythmManager.currentBeatCount;
                 return true;
             }
         }
+        
         return false;
     }
 
     void HandleDecoyDistraction()
     {
-        if (_activeDecoy != null)
-        {
-            Vector2 directionToDecoy = (_lastDecoyPosition - _rigidbody.position).normalized;
-            float targetAngle = Vector2.SignedAngle(Vector2.up, directionToDecoy);
-            transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.Euler(0, 0, targetAngle), Time.deltaTime * 5f); 
+        if (_activeDecoy == null) return;
 
-            _targetPosition = _lastDecoyPosition;
+        Vector2 directionToDecoy = (_lastDecoyPosition - _cachedPosition).normalized;
+        float targetAngle = Vector2.SignedAngle(Vector2.up, directionToDecoy);
+        
+        _cachedTransform.rotation = Quaternion.Slerp(
+            _cachedTransform.rotation, 
+            Quaternion.Euler(0, 0, targetAngle), 
+            Time.deltaTime * 5f
+        );
 
-            if (_activeDecoy == null)
-                EnterSearchMode(_lastDecoyPosition); 
-        }
+        _targetPosition = _lastDecoyPosition;
+
+        if (_activeDecoy == null)
+            EnterSearchMode(_lastDecoyPosition);
     }
 
     void EnterSearchMode(Vector2 searchLocation)
     {
         _isPatrolling = false;
         _targetPosition = searchLocation;
-        _nextMoveBeat = _rhythmManager.currentBeatCount + 2;
+        _nextMoveBeat = RhythmManager.currentBeatCount + 2;
     }
     
-    // --- 생명 주기 및 제거 ---
-
-    /// <summary>
-    /// UI를 위한 발각 진행도 반환 (0~1)
-    /// </summary>
     public float GetDetectionProgress()
     {
-        if (!useGradualDetection || timeToFullDetection <= 0f) return 0f;
+        if (!useGradualDetection || timeToFullDetection <= 0f) 
+            return 0f;
         
         return Mathf.Clamp01(_detectionTime / timeToFullDetection);
     }
     
-    /// <summary>
-    /// 경비병을 씬에서 제거하고 필요한 정리 작업을 수행합니다.
-    /// </summary>
-    public void Die() // ★ Die 메서드 추가
+    public void Die()
     {
-        // 리듬 매니저의 이벤트 리스너 제거
-        if (_rhythmManager != null)
+        if (RhythmManager != null)
         {
-            _rhythmManager.OnBeatCounted.RemoveListener(HandleRhythmActions);
-            _rhythmManager.OnBeatCounted.RemoveListener(CheckParalysisTimeout);
-            _rhythmManager.OnBeatCounted.RemoveListener(CheckFlashTimeout); 
+            RhythmManager.OnBeatCounted.RemoveListener(HandleRhythmActions);
+            RhythmManager.OnBeatCounted.RemoveListener(CheckParalysisTimeout);
+            RhythmManager.OnBeatCounted.RemoveListener(CheckFlashTimeout);
         }
         
         Debug.Log($"경비병 {gameObject.name}이/가 제거되었습니다.");
         
-        // 경비병 오브젝트 파괴
-        Destroy(gameObject); 
+        // ⭐ 최적화: 오브젝트 풀링 지원
+        if (ObjectPoolManager.Instance != null)
+            ObjectPoolManager.Instance.Despawn(gameObject, "Guard");
+        else
+            Destroy(gameObject);
     }
 
-    // 상태 패턴 관리
+    void OnDestroy()
+    {
+        if (RhythmManager != null)
+        {
+            RhythmManager.OnBeatCounted.RemoveListener(HandleRhythmActions);
+            RhythmManager.OnBeatCounted.RemoveListener(CheckParalysisTimeout);
+            RhythmManager.OnBeatCounted.RemoveListener(CheckFlashTimeout);
+        }
+    }
+
     public void ChangeState(GuardState newState)
     {
-        if (_currentState != null)
-            _currentState.Exit();
+        _currentState?.Exit();
         _currentState = newState;
-        if (_currentState != null)
-            _currentState.Enter();
+        _currentState?.Enter();
     }
 
     public bool isFlashed { get => _isFlashed; set => _isFlashed = value; }

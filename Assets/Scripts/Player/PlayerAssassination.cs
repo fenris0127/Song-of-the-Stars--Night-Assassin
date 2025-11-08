@@ -7,35 +7,41 @@ public class PlayerAssassination : MonoBehaviour
     public float maxRange = 15f;
     public LayerMask guardMask;
 
-    private RhythmSyncManager _rhythmManager;
-    
-    void Start()
-    {
-        _rhythmManager = FindObjectOfType<RhythmSyncManager>();
-    }
+    private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
+
+    // private RhythmSyncManager _rhythmManager;
+
+    private Collider2D[] _assassinationResults = new Collider2D[10];
+
+
+    // void Start()
+    // {
+    //     _rhythmManager = FindObjectOfType<RhythmSyncManager>();
+    // }
 
     /// <summary>
     /// 근접 암살 범위 내의 경비병을 찾습니다 (2D)
     /// </summary>
     public GuardRhythmPatrol FindGuardInAssassinationRange()
     {
-        Collider2D[] hits = Physics2D.OverlapCircleAll(transform.position, assassinationRange, guardMask);
+        // ⭐ 최적화: OverlapCircleNonAlloc 사용
+        int hitCount = Physics2D.OverlapCircleNonAlloc(transform.position, assassinationRange, _assassinationResults, guardMask);
 
-        if (hits.Length > 0)
+        if (hitCount > 0)
         {
-            // 가장 가까운 경비병 찾기
             GuardRhythmPatrol closestGuard = null;
-            float minDistance = float.MaxValue;
+            float minSqrDistance = float.MaxValue;
 
-            foreach (Collider2D hit in hits)
+            for (int i = 0; i < hitCount; i++)
             {
-                GuardRhythmPatrol guard = hit.GetComponent<GuardRhythmPatrol>();
+                GuardRhythmPatrol guard = _assassinationResults[i].GetComponent<GuardRhythmPatrol>();
                 if (guard != null)
                 {
-                    float distance = Vector2.Distance(transform.position, hit.transform.position);
-                    if (distance < minDistance)
+                    // ⭐ sqrMagnitude 사용
+                    float sqrDist = (_assassinationResults[i].transform.position - transform.position).sqrMagnitude;
+                    if (sqrDist < minSqrDistance)
                     {
-                        minDistance = distance;
+                        minSqrDistance = sqrDist;
                         closestGuard = guard;
                     }
                 }
@@ -52,23 +58,19 @@ public class PlayerAssassination : MonoBehaviour
     /// </summary>
     public GuardRhythmPatrol FindGuardInRangedRange()
     {
-        if (_rhythmManager == null) return null;
+        if (RhythmManager == null) return null;
 
         Vector2 playerPos = transform.position;
-        Vector2 playerForward = transform.up; // 플레이어가 바라보는 방향
+        Vector2 playerForward = transform.up;
 
-        // Raycast로 플레이어 정면의 경비병 탐지
         RaycastHit2D hit = Physics2D.Raycast(playerPos, playerForward, maxRange, guardMask);
 
         if (hit.collider != null)
         {
-            // 장애물에 가로막히지 않았는지 확인
-            RaycastHit2D obstacleCheck = Physics2D.Raycast(playerPos, playerForward, hit.distance, _rhythmManager.obstacleMask);
+            RaycastHit2D obstacleCheck = Physics2D.Raycast(playerPos, playerForward, hit.distance, RhythmManager.obstacleMask);
 
             if (obstacleCheck.collider == null)
-            {
                 return hit.collider.GetComponent<GuardRhythmPatrol>();
-            }
         }
 
         return null;

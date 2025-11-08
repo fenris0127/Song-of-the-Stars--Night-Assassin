@@ -2,12 +2,14 @@ using UnityEngine;
 
 public class VFXManager : MonoBehaviour
 {
-    private RhythmSyncManager _rhythmManager;
+    // private RhythmSyncManager _rhythmManager;
+    private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
 
-    void Start()
-    {
-        _rhythmManager = FindObjectOfType<RhythmSyncManager>();
-    }
+
+    // void Start()
+    // {
+    //     _rhythmManager = FindObjectOfType<RhythmSyncManager>();
+    // }
 
     public void PlayVFXAt(GameObject vfxPrefab, Vector3 position, float customDuration = 0f)
     {
@@ -29,7 +31,7 @@ public class VFXManager : MonoBehaviour
     
     public void BurstVFXOnBeat(GameObject burstPrefab, Vector3 position)
     {
-        if (burstPrefab == null || _rhythmManager == null) return;
-        PlayVFXAt(burstPrefab, position, _rhythmManager.beatInterval * 2f);
+        if (burstPrefab == null || RhythmManager == null) return;
+        PlayVFXAt(burstPrefab, position, RhythmManager.beatInterval * 2f);
     }
 }

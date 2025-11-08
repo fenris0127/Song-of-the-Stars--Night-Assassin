@@ -6,6 +6,11 @@ using UnityEngine;
 /// </summary>
 public class Decoy : MonoBehaviour
 {
+    private MissionManager MissionManager => GameServices.MissionManager;
+    private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
+    private Collider2D[] _nearbyGuardsResults = new Collider2D[20];
+
+
     [Header("▶ 데코이 설정")]
     public float attractionRadius = 10f;
     public bool makeSound = true; // 소리를 내서 경비병 유인
@@ -15,16 +20,12 @@ public class Decoy : MonoBehaviour
     public bool triggersAlert = false; // 발견 시 경보 레벨 증가 여부
     public int alertIncrease = 1;
     
-    private MissionManager _missionManager;
-    private RhythmSyncManager _rhythmManager;
+    // private MissionManager _missionManager;
+    // private RhythmSyncManager _rhythmManager;
     private bool _hasBeenInvestigated = false;
 
     void Start()
     {
-        _missionManager = FindObjectOfType<MissionManager>();
-        _rhythmManager = FindObjectOfType<RhythmSyncManager>();
-        
-        // 생성 시 주변 경비병에게 알림
         if (makeSound)
             AlertNearbyGuards();
     }
@@ -34,17 +35,13 @@ public class Decoy : MonoBehaviour
     /// </summary>
     void AlertNearbyGuards()
     {
-        if (_rhythmManager == null) return;
+        if (RhythmManager == null) return;
+    
+        // ⭐ NonAlloc 사용
+        int guardCount = Physics2D.OverlapCircleNonAlloc(transform.position, attractionRadius, _nearbyGuardsResults, RhythmManager.guardMask);
         
-        Collider2D[] nearbyGuards = Physics2D.OverlapCircleAll(
-            transform.position, 
-            attractionRadius, 
-            _rhythmManager.guardMask
-        );
-        
-        Debug.Log($"데코이 생성: {nearbyGuards.Length}명의 경비병 감지");
-        
-        // 경비병들은 GuardRhythmPatrol의 CheckForDecoy()에서 자동으로 이 오브젝트를 감지합니다.
+        Debug.Log($"데코이 생성: {guardCount}명의 경비병 감지");
+
     }
 
     /// <summary>
@@ -53,14 +50,13 @@ public class Decoy : MonoBehaviour
     public void OnGuardArrived(GuardRhythmPatrol guard)
     {
         if (_hasBeenInvestigated) return;
-        
+    
         _hasBeenInvestigated = true;
         
         Debug.Log($"{guard.gameObject.name}이(가) 데코이에 도착했습니다.");
         
-        // 경보 레벨 증가 (선택사항)
-        if (triggersAlert && _missionManager != null)
-            _missionManager.IncreaseAlertLevel(alertIncrease);
+        if (triggersAlert && MissionManager != null)
+            MissionManager.IncreaseAlertLevel(alertIncrease);
     }
     
     void OnTriggerEnter2D(Collider2D other)

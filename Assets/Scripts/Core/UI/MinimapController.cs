@@ -30,6 +30,10 @@ public class MinimapController : MonoBehaviour
     private Dictionary<GuardRhythmPatrol, MinimapIcon> _guardIcons = new Dictionary<GuardRhythmPatrol, MinimapIcon>();
     private Dictionary<GameObject, GameObject> _objectIcons = new Dictionary<GameObject, GameObject>();
 
+    private int _updateFrameCounter = 0;
+    private const int ICON_UPDATE_INTERVAL = 2; // 2프레임마다 업데이트
+    
+
     void Start()
     {
         SetupMinimapCamera();
@@ -60,11 +64,9 @@ public class MinimapController : MonoBehaviour
 
     void InitializeIcons()
     {
-        // 플레이어 아이콘
-        PlayerController player = FindObjectOfType<PlayerController>();
-        if (player != null)
+        if (GameServices.Player != null)
         {
-            _playerTransform = player.transform;
+            _playerTransform = GameServices.Player.transform;
             if (playerIconPrefab != null)
             {
                 _playerIcon = Instantiate(playerIconPrefab, Vector3.zero, Quaternion.identity);
@@ -73,12 +75,12 @@ public class MinimapController : MonoBehaviour
             }
         }
         
-        // 경비병 아이콘
+        // 경비병 아이콘 - FindObjectsOfType 유지 (여러 개)
         GuardRhythmPatrol[] guards = FindObjectsOfType<GuardRhythmPatrol>();
         foreach (GuardRhythmPatrol guard in guards)
             CreateGuardIcon(guard);
         
-        // 미션 목표 아이콘
+        // 미션 목표
         MissionTarget target = FindObjectOfType<MissionTarget>();
         if (target != null && targetIconPrefab != null)
         {
@@ -107,7 +109,13 @@ public class MinimapController : MonoBehaviour
     {
         UpdateMinimapCamera();
         UpdatePlayerIcon();
-        UpdateObjectIcons();
+
+        _updateFrameCounter++;
+        if (_updateFrameCounter >= ICON_UPDATE_INTERVAL)
+        {
+            _updateFrameCounter = 0;
+            UpdateObjectIcons();
+        }
     }
 
     void UpdateMinimapCamera()
@@ -160,25 +168,29 @@ public class MinimapController : MonoBehaviour
 
     void UpdateGuardIcons()
     {
-        List<GuardRhythmPatrol> toRemove = new List<GuardRhythmPatrol>();
+        List<GuardRhythmPatrol> toRemove = null;
         
         foreach (var pair in _guardIcons)
         {
             if (pair.Key == null)
             {
+                if (toRemove == null)
+                    toRemove = new List<GuardRhythmPatrol>();
                 toRemove.Add(pair.Key);
 
                 if (pair.Value != null)
                     Destroy(pair.Value.gameObject);
-
                 continue;
             }
             
             pair.Value.UpdateIcon(cameraHeight);
         }
         
-        foreach (var key in toRemove)
-            _guardIcons.Remove(key);
+        if (toRemove != null)
+        {
+            foreach (var key in toRemove)
+                _guardIcons.Remove(key);
+        }
     }
 
     /// <summary>

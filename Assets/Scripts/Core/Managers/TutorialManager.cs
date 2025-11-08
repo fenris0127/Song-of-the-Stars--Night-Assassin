@@ -18,6 +18,10 @@ public enum TutorialTrigger
 /// </summary>
 public class TutorialManager : MonoBehaviour
 {
+    private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
+    private PlayerController Player => GameServices.Player;
+
+
     [Header("▶ UI 요소")]
     public GameObject tutorialPanel;
     public TextMeshProUGUI tutorialTitleText;
@@ -40,17 +44,13 @@ public class TutorialManager : MonoBehaviour
 
     void Start()
     {
-        _rhythmManager = FindObjectOfType<RhythmSyncManager>();
-        _playerController = FindObjectOfType<PlayerController>();
-
         if (nextButton != null)
             nextButton.onClick.AddListener(NextStep);
         if (skipButton != null)
             skipButton.onClick.AddListener(SkipTutorial);
 
-        // 첫 실행인지 확인
         if (SaveSystem.Instance != null && !SaveSystem.Instance.currentSave.completedMissions.Length.Equals(0))
-            tutorialPanel?.SetActive(false); // 이미 게임을 플레이한 적이 있으면 튜토리얼 스킵
+            tutorialPanel?.SetActive(false);
         else
             StartTutorial();
     }

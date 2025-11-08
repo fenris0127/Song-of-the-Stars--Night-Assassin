@@ -66,38 +66,29 @@ public class DifficultyManager : MonoBehaviour
     {
         DifficultySettings settings = GetCurrentSettings();
 
-        // RhythmSyncManager에 적용
-        RhythmSyncManager rhythmManager = FindObjectOfType<RhythmSyncManager>();
-        if (rhythmManager != null)
+        // ⭐ GameServices 사용
+        if (GameServices.RhythmManager != null)
         {
-            rhythmManager.beatTolerance = settings.beatTolerance;
-            rhythmManager.perfectTolerance = settings.perfectTolerance;
+            GameServices.RhythmManager.beatTolerance = settings.beatTolerance;
+            GameServices.RhythmManager.perfectTolerance = settings.perfectTolerance;
         }
 
-        // MissionManager에 적용
-        MissionManager missionManager = FindObjectOfType<MissionManager>();
-        if (missionManager != null)
-            missionManager.maxAlertLevel = settings.maxAlertLevel;
+        if (GameServices.MissionManager != null)
+            GameServices.MissionManager.maxAlertLevel = settings.maxAlertLevel;
 
-        // PlayerController에 적용
-        PlayerController player = FindObjectOfType<PlayerController>();
-        if (player != null)
-            player.moveSpeed = settings.playerMoveSpeed;
+        if (GameServices.Player != null)
+            GameServices.Player.moveSpeed = settings.playerMoveSpeed;
 
-        // PlayerStealth에 적용
-        PlayerStealth stealth = FindObjectOfType<PlayerStealth>();
-        if (stealth != null)
-            stealth.stealthMoveSpeedMultiplier = settings.stealthSpeedMultiplier;
+        if (GameServices.PlayerStealth != null)
+            GameServices.PlayerStealth.stealthMoveSpeedMultiplier = settings.stealthSpeedMultiplier;
 
-        // RhythmPatternChecker에 적용
-        RhythmPatternChecker rhythmChecker = FindObjectOfType<RhythmPatternChecker>();
-        if (rhythmChecker != null)
+        if (GameServices.RhythmChecker != null)
         {
-            rhythmChecker.maxFocus = settings.maxFocus;
-            rhythmChecker.focusPerPerfect = settings.focusPerPerfect;
+            GameServices.RhythmChecker.maxFocus = settings.maxFocus;
+            GameServices.RhythmChecker.focusPerPerfect = settings.focusPerPerfect;
         }
 
-        // 모든 경비병에 적용
+        // 경비병 - FindObjectsOfType 유지 (여러 개)
         GuardRhythmPatrol[] guards = FindObjectsOfType<GuardRhythmPatrol>();
         foreach (GuardRhythmPatrol guard in guards)
         {

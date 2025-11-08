@@ -6,6 +6,8 @@ using UnityEngine;
 public class VFXLifetime : MonoBehaviour
 {
     private RhythmSyncManager _rhythmManager;
+    private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
+    private bool _isTimeBasedLifetime = false;
     
     [Header("▶ 수명 설정")]
     public bool useBeatDuration = true; // true: 비트 기반, false: 시간 기반
@@ -64,12 +66,14 @@ public class VFXLifetime : MonoBehaviour
         useBeatDuration = false;
         durationInSeconds = seconds;
         _endTime = Time.time + seconds;
+        _isTimeBasedLifetime = true; // ⭐ 플래그 설정
+
     }
 
     void Update()
     {
         // 시간 기반 수명 체크
-        if (!useBeatDuration && Time.time >= _endTime)
+        if (_isTimeBasedLifetime && !useBeatDuration && Time.time >= _endTime)
             DestroyVFX();
     }
 

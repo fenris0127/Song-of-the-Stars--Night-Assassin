@@ -2,19 +2,20 @@ using UnityEngine;
 
 public class MusicManager : MonoBehaviour
 {
-    [Header("Audio Components")]
+    [Header("오디오 구성요소")]
     public AudioSource bgmAudioSource;
     public AudioClip bgmClip;
-    
-    [Header("Rhythm Sync Reference")]
-    private RhythmSyncManager _rhythmManager;
 
-    [Header("Synchronization Settings")]
+    [Header("리듬 동기화")]
+    private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
+    private int _lastCalculatedBeat = -1; // ⭐ 중복 계산 방지
+
+    [Header("동기화 설정")]
     public float syncDelaySeconds = 0f;
     public float firstBeatOffsetSeconds = 0f; // 첫 비트가 시작되는 시간 오프셋
     public float timePerBeat; 
     
-    [Header("Debug")]
+    [Header("디버거")]
     public bool showBeatDebug = false;
 
     private double _dspStartTime;
@@ -22,16 +23,14 @@ public class MusicManager : MonoBehaviour
 
     void Start()
     {
-        _rhythmManager = FindObjectOfType<RhythmSyncManager>();
-        
-        if (bgmAudioSource == null || bgmClip == null || _rhythmManager == null)
+        if (bgmAudioSource == null || bgmClip == null || RhythmManager == null)
         {
             Debug.LogError("MusicManager에 필수 컴포넌트가 없습니다!");
             return;
         }
 
         bgmAudioSource.clip = bgmClip;
-        timePerBeat = 60f / _rhythmManager.bpm;
+        timePerBeat = 60f / RhythmManager.bpm;
         
         Invoke(nameof(StartMusicAndSync), syncDelaySeconds);
     }
@@ -42,42 +41,40 @@ public class MusicManager : MonoBehaviour
         _dspStartTime = AudioSettings.dspTime;
         bgmAudioSource.PlayScheduled(_dspStartTime);
         
-        Debug.Log($"음악 시작: DSP Time = {_dspStartTime}, BPM = {_rhythmManager.bpm}");
+        Debug.Log($"음악 시작: DSP Time = {_dspStartTime}, BPM = {RhythmManager.bpm}");
     }
 
     void Update()
     {
-        if (!bgmAudioSource.isPlaying || _rhythmManager == null) return;
+        if (!bgmAudioSource.isPlaying || RhythmManager == null) return;
 
-        // DSP 시간 기반 정확한 경과 시간 계산
         double dspTimeElapsed = AudioSettings.dspTime - _dspStartTime;
-        
-        // 첫 비트 오프셋 적용
         double adjustedTime = dspTimeElapsed - firstBeatOffsetSeconds;
         
-        // 현재 비트 인덱스 계산 (0부터 시작)
-        int calculatedBeat = adjustedTime > 0 ? (int)Mathf.Floor((float)(adjustedTime / timePerBeat)) : -1;
+        int calculatedBeat = adjustedTime > 0 
+            ? (int)Mathf.Floor((float)(adjustedTime / timePerBeat)) 
+            : -1;
         
-        // MusicManager가 RhythmSyncManager의 비트 카운트를 이끌도록 함
-        if (calculatedBeat >= 0 && calculatedBeat > _rhythmManager.currentBeatCount)
+        // ⭐ 최적화: 비트가 변경되었을 때만 처리
+        if (calculatedBeat == _lastCalculatedBeat) return;
+        _lastCalculatedBeat = calculatedBeat;
+        
+        if (calculatedBeat >= 0 && calculatedBeat > RhythmManager.currentBeatCount)
         {
-            // 비트가 건너뛰어지지 않도록 보정
-            int beatDifference = calculatedBeat - _rhythmManager.currentBeatCount;
+            int beatDifference = calculatedBeat - RhythmManager.currentBeatCount;
             
             if (beatDifference > 1)
                 Debug.LogWarning($"비트 동기화 경고: {beatDifference}개 비트 건너뜀 감지");
             
-            _rhythmManager.currentBeatCount = calculatedBeat;
+            RhythmManager.currentBeatCount = calculatedBeat;
         }
         
-        // 디버그 표시
-        if (showBeatDebug && calculatedBeat != _lastReportedBeat && calculatedBeat >= 0)
+        if (showBeatDebug && calculatedBeat >= 0)
         {
-            _lastReportedBeat = calculatedBeat;
             double nextBeatTime = (calculatedBeat + 1) * timePerBeat + firstBeatOffsetSeconds;
             double timeToNextBeat = nextBeatTime - adjustedTime;
             
-            Debug.Log($"♪ Beat {calculatedBeat} | Next in: {timeToNextBeat:F3}s | DSP: {dspTimeElapsed:F3}s");
+            Debug.Log($"♪ Beat {calculatedBeat} | Next in: {timeToNextBeat:F3}s");
         }
     }
     
@@ -86,11 +83,11 @@ public class MusicManager : MonoBehaviour
     /// </summary>
     public void ChangeBPM(float newBPM)
     {
-        if (_rhythmManager == null) return;
-        
-        _rhythmManager.bpm = newBPM;
+        if (RhythmManager == null) return;
+    
+        RhythmManager.bpm = newBPM;
         timePerBeat = 60f / newBPM;
-        _rhythmManager.beatInterval = timePerBeat;
+        RhythmManager.beatInterval = timePerBeat;
         
         Debug.Log($"BPM 변경: {newBPM}");
     }

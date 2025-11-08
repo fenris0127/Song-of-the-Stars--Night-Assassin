@@ -14,6 +14,10 @@ public enum EffectType
 /// </summary>
 public class CollisionEffect : MonoBehaviour
 {
+    private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
+    private Collider2D[] _areaEffectResults = new Collider2D[30];
+
+
     [Header("▶ 충돌 효과 타입")]
     public EffectType effectType = EffectType.Flash;
 
@@ -30,7 +34,7 @@ public class CollisionEffect : MonoBehaviour
 
     void Start()
     {
-        _rhythmManager = FindObjectOfType<RhythmSyncManager>();
+        // _rhythmManager = FindObjectOfType<RhythmSyncManager>();
     }
 
     void OnTriggerEnter2D(Collider2D other)
@@ -65,15 +69,16 @@ public class CollisionEffect : MonoBehaviour
     /// </summary>
     public void TriggerAreaEffect()
     {
-        if (_hasTriggered || _rhythmManager == null) return;
+        if (_hasTriggered || RhythmManager == null) return;
 
         _hasTriggered = true;
 
-        Collider2D[] hits = Physics2D.OverlapCircleAll(transform.position, effectRadius, targetMask);
+        // ⭐ NonAlloc 사용
+        int hitCount = Physics2D.OverlapCircleNonAlloc(transform.position, effectRadius, _areaEffectResults, targetMask);
 
-        foreach (Collider2D hit in hits)
+        for (int i = 0; i < hitCount; i++)
         {
-            GuardRhythmPatrol guard = hit.GetComponent<GuardRhythmPatrol>();
+            GuardRhythmPatrol guard = _areaEffectResults[i].GetComponent<GuardRhythmPatrol>();
             if (guard != null)
                 ApplyEffectToGuard(guard);
         }
@@ -81,12 +86,13 @@ public class CollisionEffect : MonoBehaviour
         // VFX 생성
         if (impactVFXPrefab != null)
         {
-            GameObject vfx = Instantiate(impactVFXPrefab, transform.position, Quaternion.identity);
-            VFXLifetime lifetime = vfx.GetComponent<VFXLifetime>();
-            if (lifetime != null)
-                lifetime.SetBeatDuration(3);
+            if (VFXManager_Pooled.Instance != null)
+                VFXManager_Pooled.Instance.PlayVFX("VFX_Explosion", transform.position);
             else
+            {
+                GameObject vfx = Instantiate(impactVFXPrefab, transform.position, Quaternion.identity);
                 Destroy(vfx, 3f);
+            }
         }
 
         Destroy(gameObject);
@@ -109,10 +115,9 @@ public class CollisionEffect : MonoBehaviour
                 Debug.Log($"{guard.gameObject.name} 암살 성공");
                 break;
             case EffectType.Alert:
-                MissionManager missionManager = FindObjectOfType<MissionManager>();
-                if (missionManager != null)
+                if (GameServices.MissionManager != null)
                 {
-                    missionManager.IncreaseAlertLevel(2);
+                    GameServices.MissionManager.IncreaseAlertLevel(2);
                     Debug.Log("소음으로 인한 경보 레벨 증가!");
                 }
                 break;

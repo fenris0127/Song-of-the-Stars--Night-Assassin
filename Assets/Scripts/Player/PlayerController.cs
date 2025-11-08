@@ -3,6 +3,14 @@ using System.Linq;
 
 public class PlayerController : MonoBehaviour
 {
+    private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
+
+    // ⭐ 최적화: Vector2 상수 캐싱
+    private static readonly Vector2 UP = Vector2.up;
+    private static readonly Vector2 DOWN = Vector2.down;
+    private static readonly Vector2 LEFT = Vector2.left;
+    private static readonly Vector2 RIGHT = Vector2.right;
+
     #region 컴포넌트 및 설정
     [Header("▶ 이동 설정")]
     public float moveDistance = 2f;
@@ -40,7 +48,6 @@ public class PlayerController : MonoBehaviour
     void Start()
     {
         _rigidbody = GetComponent<Rigidbody2D>();
-        _rhythmManager = FindObjectOfType<RhythmSyncManager>();
         _rhythmChecker = GetComponent<RhythmPatternChecker>();
 
         if (_rigidbody == null)
@@ -51,20 +58,17 @@ public class PlayerController : MonoBehaviour
 
         _rigidbody.freezeRotation = true;
 
-        // If a ScriptableObject event is assigned, use it (loose coupling).
         if (beatGameEvent != null)
         {
             beatGameEvent.OnEvent.AddListener(CheckIllusionTimeout);
             beatGameEvent.OnEvent.AddListener(ExecuteQueuedMovement);
         }
-        else if (_rhythmManager != null)
+        else if (RhythmManager != null)
         {
-            // Backwards compatible: subscribe to the RhythmSyncManager UnityEvent
-            _rhythmManager.OnBeatCounted.AddListener(CheckIllusionTimeout);
-            _rhythmManager.OnBeatCounted.AddListener(ExecuteQueuedMovement);
+            RhythmManager.OnBeatCounted.AddListener(CheckIllusionTimeout);
+            RhythmManager.OnBeatCounted.AddListener(ExecuteQueuedMovement);
         }
 
-        // If an external movement command event is provided, subscribe to it to receive movement directions
         if (movementCommandEvent != null)
         {
             movementCommandEvent.OnEvent.AddListener(EnqueueMovementDirection);
@@ -107,10 +111,6 @@ public class PlayerController : MonoBehaviour
         if (direction != Vector2.zero) _queuedDirection = direction;
     }
 
-    /// <summary>
-    /// External movement command handler for ScriptableObject-driven input.
-    /// Subscribed when `movementCommandEvent` is provided.
-    /// </summary>
     private void EnqueueMovementDirection(Vector2 direction)
     {
         if (_isCharging || _queuedDirection != Vector2.zero || isFreeMoving) return;
@@ -167,10 +167,10 @@ public class PlayerController : MonoBehaviour
 
     bool CheckForObstacle(Vector2 destination)
     {
-        if (_rigidbody == null || _rhythmManager == null) return false;
+        if (_rigidbody == null || RhythmManager == null) return false;
 
         float checkRadius = 0.4f;
-        Collider2D hit = Physics2D.OverlapCircle(destination, checkRadius, _rhythmManager.obstacleMask);
+        Collider2D hit = Physics2D.OverlapCircle(destination, checkRadius, RhythmManager.obstacleMask);
 
         return hit != null;
     }
@@ -185,7 +185,7 @@ public class PlayerController : MonoBehaviour
             _rhythmChecker.currentFocus -= FREE_MOVE_FOCUS_COST;
             isFreeMoving = true;
 
-            _freeMoveEndTime = Time.time + (_rhythmManager.beatInterval * FREE_MOVE_DURATION_BEATS);
+            _freeMoveEndTime = Time.time + (RhythmManager.beatInterval * FREE_MOVE_DURATION_BEATS);
 
             _targetPosition = new Vector2(transform.position.x, transform.position.y);
         }
@@ -196,19 +196,19 @@ public class PlayerController : MonoBehaviour
         float h = Input.GetAxis("Horizontal");
         float v = Input.GetAxis("Vertical");
 
+        // ⭐ 최적화: 0 체크 먼저
+        if (Mathf.Approximately(h, 0f) && Mathf.Approximately(v, 0f))
+            return;
+
         Vector2 inputDir = new Vector2(h, v).normalized;
 
-        if (inputDir.magnitude > 0)
-        {
-           Vector2 intendedPosition = _rigidbody.position + inputDir * moveSpeed * Time.deltaTime * 0.5f;
-            
-            // 장애물 체크
-            if (!CheckForObstacle(intendedPosition))
-                _rigidbody.MovePosition(intendedPosition);
+        Vector2 intendedPosition = _rigidbody.position + inputDir * moveSpeed * Time.deltaTime * 0.5f;
+        
+        if (!CheckForObstacle(intendedPosition))
+            _rigidbody.MovePosition(intendedPosition);
 
-            float angle = Vector2.SignedAngle(Vector2.up, inputDir);
-            transform.rotation = Quaternion.Euler(0, 0, angle);
-        }
+        float angle = Vector2.SignedAngle(UP, inputDir);
+        transform.rotation = Quaternion.Euler(0, 0, angle);
     }
 
     void CheckFreeMoveTimeout()
@@ -223,14 +223,14 @@ public class PlayerController : MonoBehaviour
     // --- 스킬 관련 함수 ---
     public void ActivateIllusion(int durationInBeats)
     {
-        if (illusionPrefab != null)
+        if (illusionPrefab != null && RhythmManager != null)
         {
             GameObject decoyInstance = Instantiate(illusionPrefab, transform.position, transform.rotation);
             DecoyLifetime lifetimeScript = decoyInstance.AddComponent<DecoyLifetime>();
-            lifetimeScript.Initialize(_rhythmManager, durationInBeats);
+            lifetimeScript.Initialize(RhythmManager, durationInBeats);
 
             isIllusionActive = true;
-            _illusionEndBeat = _rhythmManager.currentBeatCount + durationInBeats;
+            _illusionEndBeat = RhythmManager.currentBeatCount + durationInBeats;
         }
     }
 

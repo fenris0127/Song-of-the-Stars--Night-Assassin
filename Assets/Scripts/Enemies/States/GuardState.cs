@@ -18,8 +18,10 @@ public abstract class GuardState
         this.guard = guard;
         this.guardRigidbody = guard.GetComponent<Rigidbody2D>();
         this.guardTransform = guard.transform;
-        this.rhythmManager = Object.FindFirstObjectByType<RhythmSyncManager>();
-        this.playerController = Object.FindFirstObjectByType<PlayerController>();
+        
+        // ⭐ GameServices 사용
+        this.rhythmManager = GameServices.RhythmManager;
+        this.playerController = GameServices.Player;
         this.missionManager = guard.missionManager;
         
         if (rhythmManager == null)
@@ -51,8 +53,8 @@ public abstract class GuardState
     // --- 공통 유틸리티 함수 ---
     protected void RotateTowards(Vector2 targetPosition)
     {
-        Vector2 direction = (targetPosition - (Vector2)guardTransform.position).normalized;
-        if (direction != Vector2.zero)
+        Vector2 direction = (targetPosition - guardRigidbody.position).normalized;
+        if (direction.sqrMagnitude > 0.001f) // ⭐ sqrMagnitude
         {
             float angle = Vector2.SignedAngle(Vector2.up, direction);
             guardTransform.rotation = Quaternion.Euler(0, 0, angle);
@@ -64,15 +66,13 @@ public abstract class GuardState
         if (guardRigidbody == null) return;
 
         Vector2 currentPos = guardRigidbody.position;
-        if (Vector2.Distance(currentPos, targetPosition) > 0.01f)
-        {
-            Vector2 moveVector = targetPosition - currentPos;
+        Vector2 moveVector = targetPosition - currentPos;
+        
+        // ⭐ sqrMagnitude 사용
+        if (moveVector.sqrMagnitude > 0.0001f)
             guardRigidbody.MovePosition(currentPos + moveVector.normalized * guard.moveSpeed * speedMultiplier * Time.deltaTime);
-        }
         else
-        {
             guardRigidbody.position = targetPosition;
-        }
     }
 
     protected bool CheckPlayerInSight(out RaycastHit2D hit)

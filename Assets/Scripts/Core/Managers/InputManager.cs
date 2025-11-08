@@ -1,7 +1,7 @@
 using UnityEngine;
 using System;
 
-private enum InputType
+public enum InputType
 {
     Movement,
     Skill1,

@@ -5,6 +5,7 @@ using UnityEngine;
 /// </summary>
 public class MissionTarget : MonoBehaviour
 {
+    private MissionManager MissionManager => GameServices.MissionManager;
     private MissionManager _missionManager;
 
     void Start()
@@ -21,11 +22,10 @@ public class MissionTarget : MonoBehaviour
     /// <param name="other">접촉한 Collider2D</param>
     void OnTriggerEnter2D(Collider2D other) 
     {
-        // 플레이어 오브젝트인지 확인
         if (other.GetComponent<PlayerController>() != null)
         {
-            if (_missionManager != null && _missionManager.isMissionActive)
-                _missionManager.MissionComplete(true); // 미션 성공
+            if (MissionManager != null && MissionManager.isMissionActive)
+                MissionManager.MissionComplete(true);
         }
     }
 }
