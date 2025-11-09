@@ -15,6 +15,9 @@ public class Decoy : MonoBehaviour
     public float attractionRadius = 10f;
     public bool makeSound = true; // 소리를 내서 경비병 유인
     public bool isVisualDecoy = false; // 시각적 미끼 (플레이어 환영)
+    [Header("Compatibility")]
+    [Tooltip("If true, this prefab will automatically register itself with the Player on Start. Set to false when using canonical PlayerController instantiation to avoid double-registration.")]
+    public bool autoRegisterWithPlayer = false;
     
     [Header("▶ 경보 설정")]
     public bool triggersAlert = false; // 발견 시 경보 레벨 증가 여부
@@ -28,6 +31,14 @@ public class Decoy : MonoBehaviour
     {
         if (makeSound)
             AlertNearbyGuards();
+
+        // Register this decoy with the Player (so guards can query it)
+        // This prefab-based registration is now opt-in via 'autoRegisterWithPlayer'.
+        // Prefer creating decoys via PlayerController.ActivateIllusion so Player owns
+        // instantiation and lifecycle. Set 'autoRegisterWithPlayer' true on legacy
+        // prefabs if you need the old behavior.
+        if (autoRegisterWithPlayer && GameServices.Player != null)
+            GameServices.Player.ActivateDecoy(gameObject);
     }
 
     /// <summary>
@@ -37,10 +48,17 @@ public class Decoy : MonoBehaviour
     {
         if (RhythmManager == null) return;
     
-        // ⭐ NonAlloc 사용
-        int guardCount = Physics2D.OverlapCircleNonAlloc(transform.position, attractionRadius, _nearbyGuardsResults, RhythmManager.guardMask);
-        
-        Debug.Log($"데코이 생성: {guardCount}명의 경비병 감지");
+    // OverlapCircleNonAlloc deprecated -> use Physics2DCompat with reusable buffer
+    int hitCount = GameServices.OverlapCircleCompat(transform.position, attractionRadius, RhythmManager.guardMask, _nearbyGuardsResults);
+
+    Debug.Log($"데코이 생성: {hitCount}명의 경비병 감지");
+
+    for (int i = 0; i < hitCount; i++)
+    {
+        GuardRhythmPatrol guard = _nearbyGuardsResults[i].GetComponent<GuardRhythmPatrol>();
+        if (guard != null)
+            guard.ChangeState(new GuardInvestigatingState(guard, transform.position));
+    }
 
     }
 
@@ -64,6 +82,13 @@ public class Decoy : MonoBehaviour
         GuardRhythmPatrol guard = other.GetComponent<GuardRhythmPatrol>();
         if (guard != null)
             OnGuardArrived(guard);
+    }
+
+    void OnDestroy()
+    {
+        // Ensure player decoy state is cleared when this decoy is destroyed
+        if (GameServices.Player != null && GameServices.Player.DecoyObject == gameObject)
+            GameServices.Player.DeactivateDecoy();
     }
 
     // 디버그용: 유인 범위 표시

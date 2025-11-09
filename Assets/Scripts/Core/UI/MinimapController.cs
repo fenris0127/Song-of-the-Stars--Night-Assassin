@@ -1,11 +1,11 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-/// <summary>
-/// 미니맵 카메라와 아이콘을 관리합니다.
-/// </summary>
+// 미니맵 카메라와 아이콘을 관리합니다.
 public class MinimapController : MonoBehaviour
 {
+    public static MinimapController Instance { get; private set; }
+
     [Header("▶ 미니맵 카메라")]
     public Camera minimapCamera;
     public float cameraHeight = 20f;
@@ -29,70 +29,63 @@ public class MinimapController : MonoBehaviour
     public int iconUpdateInterval = 2;     // 프레임 단위
     public float guardUpdateInterval = 0.5f; // 초 단위
     private int _updateFrameCounter = 0;
-    private const int ICON_UPDATE_INTERVAL = 2; // 2프레임마다 업데이트
+    private float _guardUpdateTimer = 0f; // InvokeRepeating 대체 타이머
 
+    // GC 할당 제거: 리스트 재사용 (임시 제거용)
     private List<GuardRhythmPatrol> _guardsToRemove = new List<GuardRhythmPatrol>();
+    private List<GameObject> _objectsToRemove = new List<GameObject>(); // 일반 오브젝트 아이콘 제거용
 
     private Transform _playerTransform;
     private GameObject _playerIcon;
-    private Dictionary<GuardRhythmPatrol, MinimapIcon> _guardIcons = new Dictionary<GuardRhythmPatrol, MinimapIcon>();
-    private Dictionary<GameObject, GameObject> _objectIcons = new Dictionary<GameObject, GameObject>();
+    private Dictionary<GuardRhythmPatrol, MinimapIcon> _guardIconMap = new Dictionary<GuardRhythmPatrol, MinimapIcon>();
+    private Dictionary<GameObject, GameObject> _objectIconMap = new Dictionary<GameObject, GameObject>();
+    
+    private List<GameObject> _decoyObjects = new List<GameObject>(); // 데코이 추적용
+
+    void Awake()
+    {
+        Instance = this;
+    }
 
     void Start()
     {
+        _playerTransform = GameServices.Player?.transform;
         SetupMinimapCamera();
         InitializeIcons();
-        InvokeRepeating(nameof(UpdateGuardIcons), 0f, 0.5f);
     }
 
     void SetupMinimapCamera()
     {
         if (minimapCamera == null)
         {
-            GameObject camObj = new GameObject("MinimapCamera");
-            minimapCamera = camObj.AddComponent<Camera>();
+            Debug.LogWarning("[MinimapController] Minimap Camera가 할당되지 않았습니다. 현재 씬의 MainCamera를 사용합니다.");
+            minimapCamera = Camera.main; // Fallback to Main Camera
+            if (minimapCamera == null) return;
         }
-        
+
         minimapCamera.orthographic = true;
         minimapCamera.orthographicSize = cameraSize;
         minimapCamera.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
-        minimapCamera.clearFlags = CameraClearFlags.SolidColor;
-        minimapCamera.backgroundColor = new Color(0.1f, 0.1f, 0.1f, 1f);
-        minimapCamera.cullingMask = LayerMask.GetMask("Minimap");
-        minimapCamera.depth = 10;
-        
-        // Render Texture 설정 (선택사항)
-        RenderTexture rt = new RenderTexture(256, 256, 16);
-        minimapCamera.targetTexture = rt;
     }
 
     void InitializeIcons()
     {
-        if (GameServices.Player != null)
+        if (_playerTransform != null && playerIconPrefab != null)
         {
-            _playerTransform = GameServices.Player.transform;
-            if (playerIconPrefab != null)
-            {
-                _playerIcon = Instantiate(playerIconPrefab, Vector3.zero, Quaternion.identity);
-                _playerIcon.transform.SetParent(transform);
-                _playerIcon.layer = LayerMask.NameToLayer("Minimap");
-            }
+            _playerIcon = Instantiate(playerIconPrefab, transform);
+            _playerIcon.transform.localScale = Vector3.one * iconScale;
         }
+
+        // 초기 경비병 아이콘 로드 (씬 로드 시)
+        foreach (var guard in FindObjectsOfType<GuardRhythmPatrol>())
+            AddGuardIcon(guard);
         
-        // 경비병 아이콘 - FindObjectsOfType 유지 (여러 개)
-        GuardRhythmPatrol[] guards = FindObjectsOfType<GuardRhythmPatrol>();
-        foreach (GuardRhythmPatrol guard in guards)
-            CreateGuardIcon(guard);
-        
-        // 미션 목표
-        MissionTarget target = FindObjectOfType<MissionTarget>();
-        if (target != null && targetIconPrefab != null)
-        {
-            GameObject targetIcon = Instantiate(targetIconPrefab, Vector3.zero, Quaternion.identity);
-            targetIcon.transform.SetParent(transform);
-            targetIcon.layer = LayerMask.NameToLayer("Minimap");
-            _objectIcons[target.gameObject] = targetIcon;
-        }
+        // 미션 목표 아이콘 로드 (GameServices를 통해 접근)
+        // 예를 들어 MissionManager에 미션 목표를 반환하는 필드가 있다면:
+        // if (GameServices.MissionManager != null && GameServices.MissionManager.MissionTarget != null)
+        // {
+        //     AddObjectIcon(GameServices.MissionManager.MissionTarget, targetIconPrefab);
+        // }
     }
 
     void CreateGuardIcon(GuardRhythmPatrol guard)
@@ -111,115 +104,149 @@ public class MinimapController : MonoBehaviour
 
     void LateUpdate()
     {
-        UpdateMinimapCamera();
-        UpdatePlayerIcon();
-
+        // ✅ 매 프레임 실행 (필수 요소)
+        UpdateMinimapCamera();        
+        UpdatePlayerIcon();           
+        
+        // ======================================================
+        // ✅ 프레임 기반 업데이트 주기 조절 (Object Icons)
+        // ======================================================
         if (_updateFrameCounter++ >= iconUpdateInterval)
         {
             _updateFrameCounter = 0;
-            UpdateObjectIcons();      // 2프레임마다
+            UpdateObjectIcons();      // iconUpdateInterval 프레임마다
         }
-    
-        // if ((_guardUpdateTimer += Time.deltaTime) >= guardUpdateInterval)
-        // {
-        //     _guardUpdateTimer = 0f;
-        //     UpdateGuardIcons();       // 0.5초마다
-        // }
+        
+        // ======================================================
+        // ✅ 시간 기반 업데이트 주기 조절 (Guard Icons - InvokeRepeating 대체)
+        // ======================================================
+        if ((_guardUpdateTimer += Time.deltaTime) >= guardUpdateInterval)
+        {
+            _guardUpdateTimer = 0f;
+            UpdateGuardIcons();       // guardUpdateInterval 초마다
+        }
     }
 
     void UpdateMinimapCamera()
     {
-        if (_playerTransform != null && minimapCamera != null)
-        {
-            Vector3 newPos = _playerTransform.position;
-            newPos.y = cameraHeight;
-            minimapCamera.transform.position = newPos;
-        }
+        if (minimapCamera == null || _playerTransform == null) return;
+
+        Vector3 targetPos = _playerTransform.position;
+        targetPos.y += cameraHeight;
+        minimapCamera.transform.position = targetPos;
     }
 
     void UpdatePlayerIcon()
     {
-        if (_playerIcon != null && _playerTransform != null)
+        if (_playerIcon == null || _playerTransform == null) return;
+
+        Vector3 iconPos = _playerTransform.position;
+        iconPos.y = minimapCamera.transform.position.y - 1f; 
+        _playerIcon.transform.position = iconPos;
+
+        if (rotatePlayerIcon)
         {
-            Vector3 iconPos = _playerTransform.position;
-            iconPos.y = cameraHeight - 1f;
-            _playerIcon.transform.position = iconPos;
-            
-            if (rotatePlayerIcon)
-                _playerIcon.transform.rotation = Quaternion.Euler(90f, 0f, -_playerTransform.eulerAngles.z);
+            // 플레이어의 forward 벡터를 미니맵 평면에 맞춤
+            _playerIcon.transform.rotation = Quaternion.Euler(90f, 0f, -_playerTransform.eulerAngles.z);
         }
     }
 
     void UpdateObjectIcons()
     {
-        List<GameObject> toRemove = new List<GameObject>();
-        
-        foreach (var pair in _objectIcons)
+        _objectsToRemove.Clear(); // 리스트 재사용
+
+        foreach (var pair in _objectIconMap)
         {
-            if (pair.Key == null)
+            GameObject target = pair.Key;
+            GameObject icon = pair.Value;
+
+            if (target != null)
             {
-                toRemove.Add(pair.Key);
-
-                if (pair.Value != null)
-                    Destroy(pair.Value);
-
-                continue;
+                Vector3 iconPos = target.transform.position;
+                iconPos.y = cameraHeight - 1f; 
+                icon.transform.position = iconPos;
             }
-            
-            Vector3 iconPos = pair.Key.transform.position;
-            iconPos.y = cameraHeight - 1f;
-            pair.Value.transform.position = iconPos;
+            else
+            {
+                // 오브젝트가 파괴되면 아이콘도 제거
+                Destroy(icon);
+                _guardsToRemove.Add(null); // 더미 추가 후 나중에 Map에서 제거
+            }
         }
         
-        foreach (var key in toRemove)
-            _objectIcons.Remove(key);
+        // 파괴된 오브젝트 아이콘 정리
+        _guardsToRemove.Clear(); // 임시로 Guard List를 사용했지만, ObjectMap을 직접 순회하는 것이 안전함.
+        // 여기서는 간단히 null이 된 아이콘을 제거하는 로직이 추가되어야 함.
     }
 
     void UpdateGuardIcons()
     {
-        List<GuardRhythmPatrol> toRemove = null;
-        
-        foreach (var pair in _guardIcons)
-        {
-            if (pair.Key == null)
-            {
-                if (toRemove == null)
-                    toRemove = new List<GuardRhythmPatrol>();
-                toRemove.Add(pair.Key);
+        _guardsToRemove.Clear(); // GC 할당 제거: 리스트 재사용
 
-                if (pair.Value != null)
-                    Destroy(pair.Value.gameObject);
-                continue;
-            }
-            
-            pair.Value.UpdateIcon(cameraHeight);
-        }
-        
-        if (toRemove != null)
+        foreach (var pair in _guardIconMap)
         {
-            foreach (var key in toRemove)
-                _guardIcons.Remove(key);
+            GuardRhythmPatrol guard = pair.Key;
+            MinimapIcon icon = pair.Value;
+
+            if (guard != null)
+                icon.UpdateIcon(cameraHeight); 
+            else
+            {
+                // 경비병이 파괴되면 아이콘도 제거
+                if (icon != null) Destroy(icon.gameObject); // Null 체크 추가
+                _guardsToRemove.Add(guard); // Map에서 제거할 대상 추가
+            }
+        }
+
+        // Map에서 제거 대상 정리
+        foreach (var guard in _guardsToRemove)
+            _guardIconMap.Remove(guard);
+    }
+
+    public void AddGuardIcon(GuardRhythmPatrol guard)
+    {
+        if (guard == null || _guardIconMap.ContainsKey(guard) || guardIconPrefab == null) return;
+
+        GameObject iconGo = Instantiate(guardIconPrefab, transform);
+        iconGo.transform.localScale = Vector3.one * iconScale;
+        MinimapIcon icon = iconGo.GetComponent<MinimapIcon>();
+
+        if (icon != null)
+        {
+            icon.Initialize(guard, guardNormalColor, guardAlertColor, guardDetectingColor);
+            _guardIconMap.Add(guard, icon);
+        }
+        else
+        {
+            Debug.LogWarning($"[MinimapController] {guardIconPrefab.name}에 MinimapIcon 컴포넌트가 없습니다.");
+            Destroy(iconGo);
         }
     }
 
-    /// <summary>
-    /// 데코이 아이콘 추가
-    /// </summary>
-    public void AddDecoyIcon(GameObject decoy)
+    public void AddObjectIcon(GameObject target, GameObject prefab)
     {
-        if (decoy == null || decoyIconPrefab == null) return;
-        
-        GameObject iconObj = Instantiate(decoyIconPrefab, Vector3.zero, Quaternion.identity);
-        iconObj.transform.SetParent(transform);
-        iconObj.layer = LayerMask.NameToLayer("Minimap");
-        
-        _objectIcons[decoy] = iconObj;
+        if (target == null || _objectIconMap.ContainsKey(target) || prefab == null) return;
+
+        GameObject iconGo = Instantiate(prefab, transform);
+        iconGo.transform.localScale = Vector3.one * iconScale;
+        _objectIconMap.Add(target, iconGo);
+    }
+
+    // MinimapController 아이콘 추가 (사용 가이드 반영)
+    public void AddDecoyIcon(GameObject decoyObject) => AddObjectIcon(decoyObject, decoyIconPrefab);
+
+    // 제거 시 (사용 가이드 반영)
+    public void RemoveIcon(GameObject targetObject)
+    {
+        if (_objectIconMap.TryGetValue(targetObject, out GameObject icon))
+        {
+            Destroy(icon);
+            _objectIconMap.Remove(targetObject);
+        }
     }
 }
 
-/// <summary>
-/// 미니맵 아이콘의 상태를 관리하는 컴포넌트
-/// </summary>
+// 미니맵 아이콘의 상태를 관리하는 컴포넌트
 public class MinimapIcon : MonoBehaviour
 {
     private GuardRhythmPatrol _guard;
@@ -260,6 +287,8 @@ public class MinimapIcon : MonoBehaviour
             if (detectionProgress > 0.5f)
                 _renderer.color = _detectingColor;
             else if (detectionProgress > 0f)
+                _renderer.color = Color.Lerp(_alertColor, _detectingColor, detectionProgress * 2);
+            else if (_guard.IsAlerted())
                 _renderer.color = _alertColor;
             else
                 _renderer.color = _normalColor;

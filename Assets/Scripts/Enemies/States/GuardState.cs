@@ -12,6 +12,7 @@ public abstract class GuardState
     protected RhythmSyncManager rhythmManager;
     protected PlayerController playerController;
     protected MissionManager missionManager;
+    protected PlayerStealth playerStealth;
 
     public GuardState(GuardRhythmPatrol guard)
     {
@@ -22,7 +23,8 @@ public abstract class GuardState
         // ⭐ GameServices 사용
         this.rhythmManager = GameServices.RhythmManager;
         this.playerController = GameServices.Player;
-        this.missionManager = guard.missionManager;
+        this.playerStealth = GameServices.PlayerStealth;
+        this.missionManager = GameServices.MissionManager;
         
         if (rhythmManager == null)
             Debug.LogError($"[GuardState] RhythmSyncManager를 찾을 수 없습니다!");
@@ -30,6 +32,8 @@ public abstract class GuardState
             Debug.LogError($"[GuardState] PlayerController를 찾을 수 없습니다!");
         if (missionManager == null)
             Debug.LogError($"[GuardState] MissionManager를 찾을 수 없습니다!");
+        if (playerStealth == null)
+            Debug.LogError($"[GuardState] PlayerStealth를 찾을 수 없습니다!");
     }
 
     // 상태 진입 시 호출
@@ -45,10 +49,7 @@ public abstract class GuardState
     public virtual void Exit() { }
 
     // 상태 전환 래퍼
-    protected void ChangeState(GuardState newState)
-    {
-        guard.ChangeState(newState);
-    }
+    protected void ChangeState(GuardState newState) => guard.ChangeState(newState);
 
     // --- 공통 유틸리티 함수 ---
     protected void RotateTowards(Vector2 targetPosition)
@@ -78,7 +79,7 @@ public abstract class GuardState
     protected bool CheckPlayerInSight(out RaycastHit2D hit)
     {
         hit = default;
-        if (playerController == null) return false;
+        if (playerController == null || playerStealth == null) return false;
 
         Vector2 guardPos = guardRigidbody.position;
         Vector2 playerPos = playerController.transform.position;
@@ -90,8 +91,10 @@ public abstract class GuardState
         if (Vector2.Angle(guardForward, directionToPlayer) < guard.fieldOfViewAngle / 2f && 
         distanceToPlayer <= guard.viewDistance)
         {
-            hit = Physics2D.Raycast(guardPos, directionToPlayer, guard.viewDistance, guard.ObstacleMask);
-            return hit.collider != null && hit.collider.GetComponent<PlayerController>() != null;
+            if (GameServices.RaycastCompat(guardPos, directionToPlayer, out hit, guard.viewDistance, guard.ObstacleMask))
+            {
+                return hit.collider.GetComponent<PlayerController>() != null;
+            }
         }
 
         return false;

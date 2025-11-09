@@ -73,8 +73,8 @@ public class CollisionEffect : MonoBehaviour
 
         _hasTriggered = true;
 
-        // ⭐ NonAlloc 사용
-        int hitCount = Physics2D.OverlapCircleNonAlloc(transform.position, effectRadius, _areaEffectResults, targetMask);
+        // Use compatibility helper to centralize overlap queries and avoid allocations
+    int hitCount = GameServices.OverlapCircleCompat(transform.position, effectRadius, targetMask, _areaEffectResults);
 
         for (int i = 0; i < hitCount; i++)
         {

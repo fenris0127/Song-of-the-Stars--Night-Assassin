@@ -172,9 +172,7 @@ public class OptimizedSceneLoader : MonoBehaviour
         {
             AsyncOperation unloadOp = Resources.UnloadUnusedAssets();
             while (!unloadOp.isDone)
-            {
                 yield return null;
-            }
         }
 
         if (garbageCollect)

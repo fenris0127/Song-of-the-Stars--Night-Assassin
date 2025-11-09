@@ -14,4 +14,7 @@
 *.unity
 *.asset
 *.dwlt
+*.txt
+*.png
+*.jpg
 UserSettings/Layouts/default-6000.dwlt

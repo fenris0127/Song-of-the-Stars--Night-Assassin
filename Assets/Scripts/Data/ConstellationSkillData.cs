@@ -19,4 +19,6 @@ public class ConstellationSkillData : ScriptableObject
 
     [Header("▶ 이펙트")]
     public GameObject skillEffectPrefab; 
+    [Tooltip("이펙트(예: 데코이)의 지속 시간(비트 단위). PlayerController.ActivateIllusion에서 사용됩니다.")]
+    public int effectDurationBeats = 4;
 }

@@ -1,6 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
+// Physics2DCompat is in global namespace
 
 /// <summary>
 /// 플레이어의 스킬 입력 판정, 쿨타임 관리, Focus 시스템 (최적화 통합 버전)
@@ -23,6 +24,10 @@ public class RhythmPatternChecker : MonoBehaviour
     public float focusCostPerSkill = 5f;
     public float currentFocus = 0f;
     #endregion
+
+    // 외부 UI/다른 시스템과의 호환성을 위한 프로퍼티
+    public float CurrentFocus => currentFocus;
+    public float MaxFocus => maxFocus;
 
     #region 스킬 상태 및 쿨타임
     private Dictionary<ConstellationSkillData, int> _skillCooldowns = new Dictionary<ConstellationSkillData, int>();
@@ -74,6 +79,21 @@ public class RhythmPatternChecker : MonoBehaviour
         }
     }
 
+    public void DecreaseFocus(float amount)
+    {
+        // Focus는 0 이하로 내려가지 않도록 제한
+        currentFocus = Mathf.Max(0f, currentFocus - amount);
+        UI?.UpdateFocusBar();
+    }
+    
+    // ⭐ 추가: Focus 증가 메서드 (캡슐화)
+    public void IncreaseFocus(float amount)
+    {
+        // Focus는 maxFocus를 초과하지 않도록 제한
+        currentFocus = Mathf.Min(maxFocus, currentFocus + amount);
+        UI?.UpdateFocusBar();
+    }
+
     void ProcessSkillInput(KeyCode key)
     {
         if (!LoadoutManager.activeSkills.ContainsKey(key))
@@ -83,7 +103,7 @@ public class RhythmPatternChecker : MonoBehaviour
         
         // UI 표시
         if (UI != null)
-            UI.ShowJudgment(judgment.ToString());
+            UI.DisplayJudgment(judgment.ToString());
 
         // 사운드 재생
         PlayJudgmentSound(judgment);
@@ -179,13 +199,11 @@ public class RhythmPatternChecker : MonoBehaviour
         float effectRange = 10f;
         Vector2 playerPos = transform.position;
 
-        // ⭐ 최적화: OverlapCircleNonAlloc 사용 (GC 방지)
-        int hitCount = Physics2D.OverlapCircleNonAlloc(playerPos, effectRange, _guardCheckResults, RhythmManager.guardMask);
-        
+        // Use compatibility helper with the reusable buffer to avoid allocations
         GuardRhythmPatrol closestGuard = null;
         float minSqrDistance = float.MaxValue;
 
-        // ⭐ 최적화: sqrMagnitude로 거리 비교
+    int hitCount = GameServices.OverlapCircleCompat(playerPos, effectRange, RhythmManager.guardMask, _guardCheckResults);
         for (int i = 0; i < hitCount; i++)
         {
             GuardRhythmPatrol guard = _guardCheckResults[i].GetComponent<GuardRhythmPatrol>();
@@ -243,7 +261,12 @@ public class RhythmPatternChecker : MonoBehaviour
                 GameServices.PlayerStealth?.ToggleStealth();
                 break;
             case SkillCategory.Lure:
-                Player.ActivateIllusion(5);
+                // Lure (Decoy) activation
+                // Canonical flow: let PlayerController instantiate and own the decoy lifecycle.
+                // Use skill.effectDurationBeats when present; fall back to 5 if unspecified.
+                int duration = skill != null ? Mathf.Max(1, skill.effectDurationBeats) : 5;
+                // Pass the skill's effect prefab so designers can specify custom decoy prefabs per-skill.
+                Player.ActivateIllusion(skill != null ? skill.skillEffectPrefab : null, duration);
                 break;
             case SkillCategory.Movement:
                 Player.ActivateCharge(skill.inputCount * Player.moveDistance);
@@ -278,6 +301,14 @@ public class RhythmPatternChecker : MonoBehaviour
                 break;
         }
         
+        // Instantiate skill effect prefab if present (e.g., projectile, VFX). NOTE: for Lure
+        // we avoid instantiating the prefab here because PlayerController owns decoy instantiation
+        // in the canonical flow.
+        if (skill.skillEffectPrefab != null && Player != null && skill.category != SkillCategory.Lure)
+        {
+            GameObject spawned = Instantiate(skill.skillEffectPrefab, Player.transform.position, Quaternion.identity);
+        }
+
         Debug.Log($"스킬 발동: {skill.skillName} (쿨타임: {GetRemainingCooldown(skill)} 비트)");
         
         ResetInputSequence();

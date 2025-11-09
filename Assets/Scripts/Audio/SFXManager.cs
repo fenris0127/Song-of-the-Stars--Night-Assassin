@@ -45,74 +45,59 @@ public class SFXManager : MonoBehaviour
     [Range(0f, 1f)] public float masterVolume = 1f;
     [Range(0f, 1f)] public float sfxVolume = 0.8f;
     [Range(0f, 1f)] public float uiVolume = 0.6f;
+    
+    // ✅ 볼륨 캐싱 필드    
     private float _cachedSFXVolume;
     private float _cachedUIVolume;
 
 
     void Awake()
     {
-        // 싱글톤 패턴
-        if (Instance == null)
+        if (Instance != null && Instance != this)
         {
-            Instance = this;
-            DontDestroyOnLoad(gameObject);
-            InitializeAudioSourcePool();
-        }
-        else
             Destroy(gameObject);
-    }
+            return;
+        }
+        Instance = this;
+        DontDestroyOnLoad(gameObject);
 
-    void InitializeAudioSourcePool()
+        InitializePool();
+        UpdateVolumeCache(); // ✅ 최초 캐시 업데이트
+    }
+    
+    private void InitializePool()
     {
         for (int i = 0; i < audioSourcePoolSize; i++)
         {
-            AudioSource source = gameObject.AddComponent<AudioSource>();
+            GameObject child = new GameObject($"AudioSource_{i}");
+            child.transform.parent = transform;
+
+            AudioSource source = child.AddComponent<AudioSource>();
             source.playOnAwake = false;
+            source.spatialBlend = 1.0f; // 3D 사운드 활성화
+            source.rolloffMode = AudioRolloffMode.Linear;
+            source.maxDistance = 30f;
             _audioSourcePool.Add(source);
         }
     }
 
-    /// <summary>
-    /// 사운드 이펙트 재생 (기본)
-    /// </summary>
-    public void PlaySFX(AudioClip clip, float volumeMultiplier = 1f)
+    // 볼륨 변경 시 캐시 업데이트
+    void UpdateVolumeCache()
     {
-        if (clip == null) return;
-        
-        AudioSource source = GetAvailableAudioSource();
-        source.clip = clip;
-        source.volume = masterVolume * sfxVolume * volumeMultiplier;
-        source.Play();
+        _cachedSFXVolume = masterVolume * sfxVolume;
+        _cachedUIVolume = masterVolume * uiVolume;
     }
     
-    /// <summary>
-    /// 3D 위치 기반 사운드 재생
-    /// </summary>
-    public void PlaySFXAtPosition(AudioClip clip, Vector3 position, float volumeMultiplier = 1f)
-    {
-        if (clip == null) return;
-        
-        AudioSource.PlayClipAtPoint(clip, position, masterVolume * sfxVolume * volumeMultiplier);
-    }
-    
-    /// <summary>
-    /// UI 사운드 재생
-    /// </summary>
-    public void PlayUISFX(AudioClip clip)
-    {
-        if (clip == null) return;
-        
-        AudioSource source = GetAvailableAudioSource();
-        source.clip = clip;
-        source.volume = masterVolume * uiVolume;
-        source.Play();
-    }
+    // 개선된 볼륨 조절 API (사용 가이드 반영)
+    public void SetMasterVolume(float volume) { masterVolume = volume; UpdateVolumeCache(); }
+    public void SetSFXVolume(float volume) { sfxVolume = volume; UpdateVolumeCache(); }
+    public void SetUIVolume(float volume) { uiVolume = volume; UpdateVolumeCache(); }
 
     AudioSource GetAvailableAudioSource()
     {
-        // 먼저 사용 가능한 소스 찾기
-        for (int i = 0; i < _audioSourcePool.Count; i++)
+       for (int i = 0; i < _audioSourcePool.Count; i++)
         {
+            // 현재 인덱스부터 순회하며 재생 중이 아닌 소스를 찾음
             int index = (_currentPoolIndex + i) % _audioSourcePool.Count;
             if (!_audioSourcePool[index].isPlaying)
             {
@@ -120,26 +105,45 @@ public class SFXManager : MonoBehaviour
                 return _audioSourcePool[index];
             }
         }
-
-        // 모두 사용 중이면 라운드 로빈
-        // AudioSource source = _audioSourcePool[_currentPoolIndex];
-        // _currentPoolIndex = (_currentPoolIndex + 1) % _audioSourcePool.Count;
-        // return source;
-
-        return _audioSourcePool[_currentPoolIndex++];
+        
+        // 모두 사용 중이면 가장 오래된 것 (현재 인덱스)을 재사용
+        AudioSource oldestSource = _audioSourcePool[_currentPoolIndex];
+        _currentPoolIndex = (_currentPoolIndex + 1) % _audioSourcePool.Count;
+        return oldestSource;
     }
-    
-    void UpdateVolumeCache()
+
+    // 사운드 이펙트 재생 (기본)
+    public void PlaySFX(AudioClip clip, bool isUI = false)
     {
-        _cachedSFXVolume = masterVolume * sfxVolume;
-        _cachedUIVolume = masterVolume * uiVolume;
+        if (clip == null) return;
+        
+        AudioSource source = GetAvailableAudioSource();
+        source.clip = clip;
+        source.loop = false;
+        source.volume = isUI ? _cachedUIVolume : _cachedSFXVolume; // 캐싱된 볼륨 사용
+        source.spatialBlend = isUI ? 0f : 1f; // UI 사운드는 2D
+        source.transform.position = transform.position; // 2D 사운드는 리스너 위치에 맞춤
+        source.Play();
     }
-
-    // === 편의 함수들 ===
     
-    public void PlayPerfectSound() => PlaySFX(perfectSound);
-    public void PlayGreatSound() => PlaySFX(greatSound);
-    public void PlayMissSound() => PlaySFX(missSound);
+    // 3D 위치 기반 사운드 재생
+    public void PlaySFXAtPosition(AudioClip clip, Vector3 position)
+    {
+        if (clip == null) return;
+        
+        AudioSource source = GetAvailableAudioSource();
+        source.clip = clip;
+        source.loop = false;
+        source.volume = _cachedSFXVolume; // 캐싱된 볼륨 사용
+        source.spatialBlend = 1f;
+        source.transform.position = position; // 3D 사운드는 위치에 맞춤
+        source.Play();
+    }
+    
+    // === 편의 함수들 ===
+    public void PlayPerfectSound() => PlaySFX(perfectSound, true);
+    public void PlayGreatSound() => PlaySFX(greatSound, true);
+    public void PlayMissSound() => PlaySFX(missSound, true);
     
     public void PlayStealthActivate() => PlaySFX(stealthActivateSound);
     public void PlayStealthDeactivate() => PlaySFX(stealthDeactivateSound);
@@ -148,15 +152,12 @@ public class SFXManager : MonoBehaviour
     public void PlayAssassination() => PlaySFX(assassinationSound);
     public void PlayFlashbang() => PlaySFX(flashbangSound);
     
-    public void PlayAlertIncrease() => PlaySFX(alertIncreaseSound);
-    public void PlayDetectionWarning() => PlaySFX(detectionWarningSound);
-    public void PlayMissionSuccess() => PlaySFX(missionSuccessSound);
-    public void PlayMissionFail() => PlaySFX(missionFailSound);
+    public void PlayAlertIncrease() => PlaySFX(alertIncreaseSound, true);
+    public void PlayDetectionWarning() => PlaySFX(detectionWarningSound, true);
+    public void PlayMissionSuccess() => PlaySFX(missionSuccessSound, true);
+    public void PlayMissionFail() => PlaySFX(missionFailSound, true);
     
     public void PlayGuardDeath(Vector3 position) => PlaySFXAtPosition(guardDeathSound, position);
     public void PlayGuardAlert(Vector3 position) => PlaySFXAtPosition(guardAlertSound, position);
     public void PlayGuardSearch(Vector3 position) => PlaySFXAtPosition(guardSearchSound, position);
-    
-    public void PlayButtonClick() => PlayUISFX(buttonClickSound);
-    public void PlaySkillReady() => PlayUISFX(skillCooldownReadySound);
 }

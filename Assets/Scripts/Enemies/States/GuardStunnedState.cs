@@ -13,6 +13,8 @@ public class GuardStunnedState : GuardState
 
     public override void Enter()
     {
+        guard.isStunned = true;
+
         if (isFlashed)
             Debug.Log($"경비병 {guard.name}: 섬광탄에 기절 (회복: {recoveryBeat}비트)");
         else
@@ -39,7 +41,7 @@ public class GuardStunnedState : GuardState
         // 상태 이상 플래그 초기화
         if (isFlashed)
             this.guard.isFlashed = false;
-        else
-            this.guard.isParalyzed = false;
+            
+        this.guard.isStunned = false;
     }
 }

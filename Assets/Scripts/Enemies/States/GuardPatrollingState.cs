@@ -30,7 +30,7 @@ public class GuardPatrollingState : GuardState
         if (CheckPlayerInSight(out hit))
         {
             var player = hit.collider.GetComponent<PlayerController>();
-            if (player != null && !player.GetComponent<PlayerStealth>().isStealthActive && !player.isIllusionActive)
+            if (player != null && playerStealth != null && !playerStealth.isStealthActive && !player.isIllusionActive)
             {
                 guard.ChangeState(new GuardChasingState(guard));
                 return;

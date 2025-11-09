@@ -1,13 +1,11 @@
 using UnityEngine;
 
+/// <summary>
+/// 플레이어의 움직임과 스킬 사용을 제어하는 메인 컴포넌트입니다.
+/// </summary>
 public class PlayerController : MonoBehaviour
 {
     private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
-
-    private static readonly Vector2 UP = Vector2.up;
-    private static readonly Vector2 DOWN = Vector2.down;
-    private static readonly Vector2 LEFT = Vector2.left;
-    private static readonly Vector2 RIGHT = Vector2.right;
 
     #region 컴포넌트 및 설정
     [Header("▶ 이동 설정")]
@@ -24,6 +22,27 @@ public class PlayerController : MonoBehaviour
     public Vector2GameEvent movementCommandEvent;
     #endregion
 
+    #region 데코이 관리
+    private GameObject _currentDecoy;
+    private bool _isDecoyActive;
+    private int _decoyEndBeat;
+
+    /// <summary>
+    /// 현재 활성화된 데코이의 오브젝트
+    /// </summary>
+    public GameObject DecoyObject => _currentDecoy;
+
+    /// <summary>
+    /// 데코이의 현재 위치
+    /// </summary>
+    public Vector2 DecoyPosition => _currentDecoy != null ? _currentDecoy.transform.position : Vector2.zero;
+
+    /// <summary>
+    /// 데코이가 현재 활성화되어 있는지 여부
+    /// </summary>
+    public bool isDecoyActive => _isDecoyActive && _currentDecoy != null;
+    #endregion
+    
     #region 상태 플래그
     private bool _isMoving = false;
     private Vector2 _targetPosition;
@@ -31,231 +50,249 @@ public class PlayerController : MonoBehaviour
     private bool _isCharging = false;
     private float _chargeDistanceRemaining = 0f;
 
-    public bool isIllusionActive = false;
-    private int _illusionEndBeat = 0;
-
     public bool isFreeMoving = false;
     private float _freeMoveEndTime = 0f;
     private const float FREE_MOVE_FOCUS_COST = 50f;
-    private const int FREE_MOVE_DURATION_BEATS = 4;
-    
-    // ⭐ 이벤트 구독 추적용
+    private const float FREE_MOVE_DURATION = 1f;
+
     private bool _subscribedToBeatEvent = false;
     private bool _subscribedToMovementEvent = false;
     #endregion
 
-    void Start()
+    void Awake()
     {
         _rigidbody = GetComponent<Rigidbody2D>();
-        _rhythmChecker = GetComponent<RhythmPatternChecker>();
+        _rhythmChecker = GameServices.RhythmChecker;
+    }
 
-        if (_rigidbody == null)
-        {
-            Debug.LogError("PlayerController: Rigidbody2D 컴포넌트가 필요합니다!");
-            return;
-        }
-
-        _rigidbody.freezeRotation = true;
-
-        // 이벤트 구독
+    void Start()
+    {
+        _targetPosition = new Vector2(transform.position.x, transform.position.y);
+        
+        // 리듬 이벤트 구독
         if (beatGameEvent != null)
         {
-            beatGameEvent.OnEvent.AddListener(CheckIllusionTimeout);
+            beatGameEvent.OnEvent.AddListener(CheckDecoyTimeout);
             beatGameEvent.OnEvent.AddListener(ExecuteQueuedMovement);
             _subscribedToBeatEvent = true;
         }
         else if (RhythmManager != null)
         {
-            RhythmManager.OnBeatCounted.AddListener(CheckIllusionTimeout);
+            RhythmManager.OnBeatCounted.AddListener(CheckDecoyTimeout);
             RhythmManager.OnBeatCounted.AddListener(ExecuteQueuedMovement);
             _subscribedToBeatEvent = true;
         }
 
-        if (movementCommandEvent != null)
+        // 입력 이벤트 구독
+        if (InputManager.Instance != null)
         {
-            movementCommandEvent.OnEvent.AddListener(EnqueueMovementDirection);
+            InputManager.Instance.OnMovementInput += EnqueueMovementDirection;
             _subscribedToMovementEvent = true;
         }
-
-        _targetPosition = new Vector2(transform.position.x, transform.position.y);
     }
 
     void Update()
     {
-        HandleChargeMovement();
-
-        if (!isFreeMoving)
-            HandleRhythmMovementInput();
-        else
+        if (_isCharging)
         {
-            HandleFreeMoveInput();
-            CheckFreeMoveTimeout();
+            HandleChargeMovement();
         }
 
-        MoveToTarget();
-
-        if (Input.GetKeyDown(KeyCode.Space))
-            AttemptActivateFreeMove();
+        if (isFreeMoving)
+        {
+            HandleFreeMovement();
+        }
     }
-
-    void HandleRhythmMovementInput()
+    
+    // ✅ 버그 수정: OnDestroy 이벤트 구독 해제 및 정리
+    void OnDestroy()
     {
-        if (_isCharging || _queuedDirection != Vector2.zero || isFreeMoving) return;
+        if (_subscribedToBeatEvent)
+        {
+            // beatGameEvent 구독 해제
+            if (beatGameEvent != null)
+            {
+                beatGameEvent.OnEvent.RemoveListener(CheckDecoyTimeout);
+                beatGameEvent.OnEvent.RemoveListener(ExecuteQueuedMovement);
+            }
+            // RhythmManager 구독 해제
+            else if (RhythmManager != null)
+            {
+                RhythmManager.OnBeatCounted.RemoveListener(CheckDecoyTimeout);
+                RhythmManager.OnBeatCounted.RemoveListener(ExecuteQueuedMovement);
+            }
+        }
+        
+        // 정리: 활성화된 데코이 제거
+        DeactivateDecoy();
 
-        Vector2 direction = Vector2.zero;
-
-        if (Input.GetKeyDown(KeyCode.W)) direction = UP;
-        else if (Input.GetKeyDown(KeyCode.S)) direction = DOWN;
-        else if (Input.GetKeyDown(KeyCode.A)) direction = LEFT;
-        else if (Input.GetKeyDown(KeyCode.D)) direction = RIGHT;
-
-        if (direction != Vector2.zero) 
-            _queuedDirection = direction;
+        // 이동 입력 구독 해제
+        if (_subscribedToMovementEvent && InputManager.Instance != null)
+            InputManager.Instance.OnMovementInput -= EnqueueMovementDirection;
+            
+        if (isFreeMoving) isFreeMoving = false;
     }
 
     private void EnqueueMovementDirection(Vector2 direction)
     {
-        if (_isCharging || _queuedDirection != Vector2.zero || isFreeMoving) return;
-        if (direction == Vector2.zero) return;
-        _queuedDirection = direction;
+        if (!_isMoving && !_isCharging)
+        {
+            _queuedDirection = direction;
+        }
     }
 
-    void ExecuteQueuedMovement(int currentBeat)
+    private void ExecuteQueuedMovement(int beat)
     {
-        if (_queuedDirection != Vector2.zero && !_isMoving && !isFreeMoving)
+        if (GameServices.IsPaused() || _isCharging || isFreeMoving) return;
+        
+        if (_queuedDirection != Vector2.zero)
         {
-            Vector2 current2DPos = new Vector2(transform.position.x, transform.position.y);
-            Vector2 intendedPosition = current2DPos + _queuedDirection * moveDistance;
-
-            if (CheckForObstacle(intendedPosition))
-            {
-                Debug.Log("이동 경로에 장애물 감지: 이동 취소");
-                _queuedDirection = Vector2.zero;
-                return;
-            }
-
-            _targetPosition = intendedPosition;
-            _isMoving = true;
-
-            if (_queuedDirection != Vector2.zero)
-            {
-                float angle = Vector2.SignedAngle(UP, _queuedDirection);
-                transform.rotation = Quaternion.Euler(0, 0, angle);
-            }
-
+            Move(_queuedDirection);
             _queuedDirection = Vector2.zero;
         }
     }
 
-    void MoveToTarget()
+    public void Move(Vector2 direction)
     {
-        if (!_isMoving || isFreeMoving) return;
+        if (_isMoving || _isCharging) return;
 
-        Vector2 current2DPos = new Vector2(transform.position.x, transform.position.y);
-        Vector2 moveVector = _targetPosition - current2DPos;
-        float step = moveSpeed * Time.deltaTime;
-
-        if (moveVector.magnitude < step)
-        {
-            _rigidbody.MovePosition(_targetPosition);
-            _isMoving = false;
-        }
-        else
-        {
-            Vector2 newPosition = current2DPos + moveVector.normalized * step;
-            _rigidbody.MovePosition(newPosition);
-        }
+        // 이동 방향 설정 및 회전
+        transform.up = direction;
+        
+        Vector2 startPosition = _rigidbody.position;
+        _targetPosition = startPosition + direction * moveDistance;
+        _isMoving = true;
+        
+        // 이동 시작
+        _rigidbody.MovePosition(_targetPosition);
+        _isMoving = false; // 간단한 버전에서는 즉시 완료 처리
     }
 
-    bool CheckForObstacle(Vector2 destination)
+    /// <summary>
+    /// 데코이를 활성화하고 이전 데코이가 있다면 비활성화합니다.
+    /// </summary>
+    public void ActivateIllusion(int durationBeats)
     {
-        if (_rigidbody == null || RhythmManager == null) return false;
-
-        float checkRadius = 0.4f;
-        Collider2D hit = Physics2D.OverlapCircle(destination, checkRadius, RhythmManager.obstacleMask);
-
-        return hit != null;
+        // Backwards-compatible: use the inspector-assigned illusionPrefab
+        ActivateIllusion(illusionPrefab, durationBeats);
     }
 
-    public void AttemptActivateFreeMove()
+    /// <summary>
+    /// Canonical activation that allows callers to provide a specific prefab.
+    /// If prefab is null, falls back to the inspector `illusionPrefab`.
+    /// </summary>
+    public void ActivateIllusion(GameObject prefab, int durationBeats)
+    {
+        if (RhythmManager == null) return;
+
+        GameObject toSpawn = prefab != null ? prefab : illusionPrefab;
+        if (toSpawn == null) return;
+
+        // 이전 데코이가 있다면 제거
+        DeactivateDecoy();
+
+        // 새 데코이 생성 및 초기화
+        _currentDecoy = Instantiate(toSpawn, transform.position, transform.rotation);
+        DecoyLifetime lifetimeScript = _currentDecoy.AddComponent<DecoyLifetime>();
+        lifetimeScript.Initialize(RhythmManager, durationBeats);
+
+        // 데코이 상태 추적
+        _isDecoyActive = true;
+        _decoyEndBeat = RhythmManager.currentBeatCount + durationBeats;
+
+        Debug.Log($"데코이 생성({toSpawn.name}): {durationBeats}비트 동안 유지됨");
+    }
+
+    /// <summary>
+    /// 기존 코드 호환성용: 외부에서 생성된 데코이(GameObject)를 플레이어에 등록합니다.
+    /// Decoy 프리팹이 자체적으로 수명을 관리(DecoyLifetime)하는 경우 해당 로직에 맡깁니다.
+    /// </summary>
+    public void ActivateDecoy(GameObject decoyObject)
+    {
+        if (decoyObject == null) return;
+
+        // 이전 데코이 제거(중복 등록 방지)
+        if (_currentDecoy != null && _currentDecoy != decoyObject)
+            DeactivateDecoy();
+
+        _currentDecoy = decoyObject;
+        _isDecoyActive = true;
+
+        Debug.Log("외부 데코이 등록됨: " + decoyObject.name);
+    }
+
+    /// <summary>
+    /// 활성화된 데코이를 제거합니다.
+    /// </summary>
+    public void DeactivateDecoy()
+    {
+        if (_currentDecoy != null)
+        {
+            Destroy(_currentDecoy);
+            _currentDecoy = null;
+        }
+        _isDecoyActive = false;
+        Debug.Log("데코이 비활성화");
+    }
+
+    /// <summary>
+    /// 현재 비트에서 데코이 타임아웃을 체크합니다.
+    /// </summary>
+    private void CheckDecoyTimeout(int beat)
+    {
+        if (_isDecoyActive && beat >= _decoyEndBeat)
+        {
+            DeactivateDecoy();
+        }
+    }
+    
+    // ⭐ Free Move (임시로 리듬 동기화를 해제하고 자유 이동)
+    public void StartFreeMove()
     {
         if (isFreeMoving) return;
-
-        if (_rhythmChecker != null && _rhythmChecker.currentFocus >= FREE_MOVE_FOCUS_COST)
-        {
-            _rhythmChecker.currentFocus -= FREE_MOVE_FOCUS_COST;
-            isFreeMoving = true;
-
-            if (RhythmManager != null)
-                _freeMoveEndTime = Time.time + (RhythmManager.beatInterval * FREE_MOVE_DURATION_BEATS);
-            else
-                _freeMoveEndTime = Time.time + 2f; // 폴백
-
-            _targetPosition = new Vector2(transform.position.x, transform.position.y);
-        }
-    }
-
-    void HandleFreeMoveInput()
-    {
-        float h = Input.GetAxis("Horizontal");
-        float v = Input.GetAxis("Vertical");
-
-        if (Mathf.Approximately(h, 0f) && Mathf.Approximately(v, 0f))
-            return;
-
-        Vector2 inputDir = new Vector2(h, v).normalized;
-        Vector2 intendedPosition = _rigidbody.position + inputDir * moveSpeed * Time.deltaTime * 0.5f;
         
-        if (!CheckForObstacle(intendedPosition))
-            _rigidbody.MovePosition(intendedPosition);
-
-        float angle = Vector2.SignedAngle(UP, inputDir);
-        transform.rotation = Quaternion.Euler(0, 0, angle);
+        isFreeMoving = true;
+        _freeMoveEndTime = Time.time + FREE_MOVE_DURATION;
+        // Focus 코스트 지불
+        _rhythmChecker.DecreaseFocus(FREE_MOVE_FOCUS_COST);
     }
-
-    void CheckFreeMoveTimeout()
+    
+    private void HandleFreeMovement()
     {
-        if (isFreeMoving && Time.time >= _freeMoveEndTime)
+        if (Time.time > _freeMoveEndTime)
         {
             isFreeMoving = false;
-            _targetPosition = new Vector2(transform.position.x, transform.position.y);
+            return;
         }
-    }
-
-    public void ActivateIllusion(int durationInBeats)
-    {
-        if (illusionPrefab != null && RhythmManager != null)
+        
+        // 이동 로직 (Update에서 Time.deltaTime 사용)
+        Vector2 moveDirection = InputManager.Instance.CurrentMovementInput; // InputManager에서 직접 접근 필요
+        if (moveDirection != Vector2.zero)
         {
-            GameObject decoyInstance = Instantiate(illusionPrefab, transform.position, transform.rotation);
-            DecoyLifetime lifetimeScript = decoyInstance.AddComponent<DecoyLifetime>();
-            lifetimeScript.Initialize(RhythmManager, durationInBeats);
-
-            isIllusionActive = true;
-            _illusionEndBeat = RhythmManager.currentBeatCount + durationInBeats;
+            _rigidbody.MovePosition(_rigidbody.position + moveDirection * moveSpeed * Time.deltaTime);
         }
     }
-
-    public void CheckIllusionTimeout(int currentBeat)
+    
+    public void StartCharge(float distance)
     {
-        if (isIllusionActive && currentBeat >= _illusionEndBeat)
-            isIllusionActive = false;
-    }
-
-    public void ActivateCharge(float distance)
-    {
+        if (_isCharging) return;
+        
         _isCharging = true;
         _chargeDistanceRemaining = distance;
     }
 
-    void HandleChargeMovement()
+    // 호환성용 wrapper: 다른 스크립트에서 호출하던 ActivateCharge를 그대로 지원
+    public void ActivateCharge(float distance) => StartCharge(distance);
+    
+    private void HandleChargeMovement()
     {
-        if (!_isCharging) return;
-
-        float step = moveSpeed * 2f * Time.deltaTime;
-
-        if (_chargeDistanceRemaining > 0f)
+        if (GameServices.IsPaused()) return;
+        
+        float step = moveSpeed * Time.deltaTime;
+        float actualStep = Mathf.Min(step, _chargeDistanceRemaining);
+        
+        if (actualStep > 0f)
         {
-            float actualStep = Mathf.Min(step, _chargeDistanceRemaining);
             Vector2 forward2D = new Vector2(transform.up.x, transform.up.y);
             _rigidbody.MovePosition(_rigidbody.position + forward2D * actualStep);
             _chargeDistanceRemaining -= actualStep;
@@ -267,34 +304,5 @@ public class PlayerController : MonoBehaviour
             _targetPosition = new Vector2(transform.position.x, transform.position.y);
             _isMoving = false;
         }
-    }
-
-    // ⭐ 수정: 이벤트 구독 해제
-    void OnDestroy()
-    {
-        // if (_subscribedToBeatEvent)
-        // {
-        //     if (beatGameEvent != null)
-        //     {
-        //         beatGameEvent.OnEvent.RemoveListener(CheckIllusionTimeout);
-        //         beatGameEvent.OnEvent.RemoveListener(ExecuteQueuedMovement);
-        //     }
-        //     else if (RhythmManager != null)
-        //     {
-        //         RhythmManager.OnBeatCounted.RemoveListener(CheckIllusionTimeout);
-        //         RhythmManager.OnBeatCounted.RemoveListener(ExecuteQueuedMovement);
-        //     }
-        // }
-
-        if (_subscribedToBeatEvent)
-        {
-            if (beatGameEvent != null)
-                beatGameEvent.OnEvent.RemoveListener(CheckIllusionTimeout);
-            else if (RhythmManager != null)
-                RhythmManager.OnBeatCounted.RemoveListener(CheckIllusionTimeout);
-        }
-
-        if (_subscribedToMovementEvent && movementCommandEvent != null)
-            movementCommandEvent.OnEvent.RemoveListener(EnqueueMovementDirection);
     }
 }

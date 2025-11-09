@@ -2,7 +2,7 @@ using UnityEngine;
 
 public class GuardInvestigatingState : GuardState
 {
-    protected MissionManager MissionManager => guard.missionManager;
+    protected MissionManager MissionManager => GameServices.MissionManager;
 
     private Vector2 investigatePosition;
     private float investigationStartTime;
@@ -28,7 +28,7 @@ public class GuardInvestigatingState : GuardState
         if (CheckPlayerInSight(out hit))
         {
             var player = hit.collider.GetComponent<PlayerController>();
-            if (player != null && !player.GetComponent<PlayerStealth>().isStealthActive && !player.isIllusionActive)
+            if (player != null && playerStealth != null && !playerStealth.isStealthActive && !player.isIllusionActive)
             {
                 ChangeState(new GuardChasingState(guard));
                 return;

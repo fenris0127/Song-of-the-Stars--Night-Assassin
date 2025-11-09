@@ -7,8 +7,12 @@ using UnityEngine.Events;
 public class ProbabilisticDetection : MonoBehaviour
 {
     [Header("Detection Settings")]
+    private float _currentProgress = 0f;
     [SerializeField] private DetectionProbabilityData detectionData;
     [SerializeField] private float detectionCheckInterval = 0.5f;
+
+    public float progressIncreaseMultiplier = 1.0f; // 시야에 있을 때 기본 증가율
+    public float progressDecreaseRate = 0.5f;      // 시야에서 벗어났을 때 감소 속도 (초당)
     
     [Header("References")]
     [SerializeField] private GuardRhythmPatrol guardPatrol;
@@ -41,14 +45,39 @@ public class ProbabilisticDetection : MonoBehaviour
 
     private void Update()
     {
-        detectionTimer -= Time.deltaTime;
+        // 1. 발각 진행도 감소 (모든 프레임에서 점진적 감소)
+        _currentProgress -= progressDecreaseRate * Time.deltaTime;
+
+        // 2. 플레이어 시야 체크 (GuardRhythmPatrol의 시야각/거리를 이용)
+        Vector2 directionToPlayer = (playerTransform.position - transform.position).normalized;
+        float distance = Vector2.Distance(transform.position, playerTransform.position);
         
-        if (detectionTimer <= 0f)
+        // IsInFieldOfView는 ProbabilisticDetection.cs에 정의되어 있어야 합니다.
+        if (IsInFieldOfView(directionToPlayer, distance)) 
         {
-            detectionTimer = detectionCheckInterval;
-            TryDetectPlayer();
+            // 3. 탐지 확률 계산
+            float probability = CalculateDetectionProbability(distance);
+
+            // 4. 발각 진행도 증가
+            // 확률에 비례하여 증가율 조정 (예: 확률이 높으면 더 빨리 참)
+            _currentProgress += probability * progressIncreaseMultiplier * Time.deltaTime;
         }
+
+        // 5. 진행도 클램프
+        _currentProgress = Mathf.Clamp01(_currentProgress);
+        
+        // 6. 탐지 성공 체크
+        if (_currentProgress >= 1f)
+             onDetectionSuccess?.Invoke();
     }
+
+    // 현재 발각 진행도를 반환합니다. (0.0~1.0)
+    public float GetDetectionProgress() => _currentProgress;
+    
+    /// <summary>
+    /// 기존 코드에서 호출하던 CalculateDetection() 호환 래퍼
+    /// </summary>
+    public float CalculateDetection() => GetDetectionProgress();
 
     /// <summary>
     /// 현재 상태에 기반하여 플레이어 탐지를 시도합니다.
@@ -79,17 +108,19 @@ public class ProbabilisticDetection : MonoBehaviour
     /// <summary>
     /// 플레이어가 경비병의 시야각 내에 있는지 확인합니다.
     /// </summary>
-    private bool IsInFieldOfView(Vector2 directionToPlayer, float distance)
+    private bool IsInFieldOfView(Vector2 directionToPlayer, float distanceToPlayer)
     {
-        if (distance > detectionData.maxViewDistance) return false;
+        if (guardPatrol == null || guardPatrol.PlayerTransform == null) return false;
 
-        float angle = Vector2.Angle(transform.right, directionToPlayer);
-        return angle <= guardPatrol.fieldOfViewAngle * 0.5f;
+        Vector2 guardForward = guardPatrol.transform.up;
+        float angleToPlayer = Vector2.Angle(guardForward, directionToPlayer);
+
+        // 거리 및 각도 체크 (GuardRhythmPatrol의 값 사용)
+        return distanceToPlayer <= guardPatrol.viewDistance &&
+               angleToPlayer < guardPatrol.fieldOfViewAngle / 2f;
     }
 
-    /// <summary>
     /// 현재 상황에 기반한 탐지 확률을 계산합니다.
-    /// </summary>
     private float CalculateDetectionProbability(float distance)
     {
         // 1. 기본 FOV 탐지 확률

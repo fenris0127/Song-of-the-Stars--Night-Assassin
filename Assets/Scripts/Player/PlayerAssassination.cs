@@ -17,8 +17,8 @@ public class PlayerAssassination : MonoBehaviour
     /// </summary>
     public GuardRhythmPatrol FindGuardInAssassinationRange()
     {
-        // ⭐ 최적화: OverlapCircleNonAlloc 사용
-        int hitCount = Physics2D.OverlapCircleNonAlloc(transform.position, assassinationRange, _assassinationResults, guardMask);
+        // OverlapCircleNonAlloc이 deprecated되어 OverlapCircleAll로 대체
+    int hitCount = GameServices.OverlapCircleCompat(transform.position, assassinationRange, guardMask, _assassinationResults);
 
         if (hitCount > 0)
         {
@@ -30,7 +30,6 @@ public class PlayerAssassination : MonoBehaviour
                 GuardRhythmPatrol guard = _assassinationResults[i].GetComponent<GuardRhythmPatrol>();
                 if (guard != null)
                 {
-                    // ⭐ sqrMagnitude 사용
                     float sqrDist = (_assassinationResults[i].transform.position - transform.position).sqrMagnitude;
                     if (sqrDist < minSqrDistance)
                     {
@@ -56,13 +55,11 @@ public class PlayerAssassination : MonoBehaviour
         Vector2 playerPos = transform.position;
         Vector2 playerForward = transform.up;
 
-        RaycastHit2D hit = Physics2D.Raycast(playerPos, playerForward, maxRange, guardMask);
-
-        if (hit.collider != null)
+        RaycastHit2D hit;
+        if (GameServices.RaycastCompat(playerPos, playerForward, out hit, maxRange, guardMask) && hit.collider != null)
         {
-            RaycastHit2D obstacleCheck = Physics2D.Raycast(playerPos, playerForward, hit.distance, RhythmManager.obstacleMask);
-
-            if (obstacleCheck.collider == null)
+            // Use HasLineOfSight to check for obstacles between us and the guard
+            if (GameServices.HasLineOfSight(playerPos, hit.point, RhythmManager.obstacleMask))
                 return hit.collider.GetComponent<GuardRhythmPatrol>();
         }
 

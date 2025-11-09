@@ -56,13 +56,9 @@ public class GuardChasingState : GuardState
         {
             // 시야에서 벗어나면 마지막 위치 수색
             if (lastKnownPlayerPosition != Vector2.zero)
-            {
                 guard.ChangeState(new GuardInvestigatingState(guard, lastKnownPlayerPosition));
-            }
             else
-            {
                 guard.ChangeState(new GuardPatrollingState(guard));
-            }
         }
     }
 
