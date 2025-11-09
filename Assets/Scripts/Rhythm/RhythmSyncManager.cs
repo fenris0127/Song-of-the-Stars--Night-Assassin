@@ -4,94 +4,105 @@ using UnityEngine.Events;
 public enum RhythmJudgment { Perfect, Great, Miss }
 
 /// <summary>
-/// 리듬 동기화 및 판정을 관리하는 핵심 매니저
+/// 리듬 동기화 및 판정 (판정 구간 사전 계산)
 /// </summary>
 public class RhythmSyncManager : MonoBehaviour
 {
-    #region 설정 및 이벤트
+    #region 설정
     [Header("▶ 리듬 설정")]
     public float bpm = 120f;
-    public float beatInterval; // 60 / BPM
-    public float beatTolerance = 0.1f; // 판정 허용 시간 (초)
-    public float perfectTolerance = 0.05f; // Perfect 판정 허용 시간 (초)
+    public float beatInterval;
+    public float beatTolerance = 0.1f;
+    public float perfectTolerance = 0.05f;
     
-    [Header("▶ 레이어 마스크 (2D)")]
-    public LayerMask obstacleMask; 
-    public LayerMask guardMask;    
+    [Header("▶ 레이어 마스크")]
+    public LayerMask obstacleMask;
+    public LayerMask guardMask;
     
     [Header("▶ 리듬 상태")]
     public int currentBeatCount = 0;
     private float _timeSinceLastBeat;
-
+    
     public UnityEvent<int> OnBeatCounted;
     #endregion
     
-    // RhythmSyncManager에 판정 구간 캐싱
-    private float _nextPerfectStart;
-    private float _nextPerfectEnd;
-    private float _nextGreatEnd;
+    #region 판정 최적화
+    // ⭐ 판정 구간 사전 계산
+    private float _perfectWindowStart;
+    private float _perfectWindowEnd;
+    private float _greatWindowStart;
+    private float _greatWindowEnd;
+    private bool _judgmentCacheValid = false;
+    #endregion
     
     void Awake()
     {
         beatInterval = 60f / bpm;
         
-        // UnityEvent 초기화
         if (OnBeatCounted == null)
             OnBeatCounted = new UnityEvent<int>();
+            
+        UpdateJudgmentWindows();
     }
 
     void Update()
     {
         _timeSinceLastBeat += Time.deltaTime;
 
-        // if (_timeSinceLastBeat >= beatInterval)
-        // {
-        //     _timeSinceLastBeat -= beatInterval;
-        //     currentBeatCount++;
-
-        //     OnBeatCounted.Invoke(currentBeatCount);
-        // }
-        
         if (_timeSinceLastBeat >= beatInterval)
         {
-            // 비트 전환 시 한 번만 계산
-            _nextPerfectStart = beatInterval - perfectTolerance;
-            _nextPerfectEnd = perfectTolerance;
-            _nextGreatEnd = beatTolerance;
+            _timeSinceLastBeat -= beatInterval;
+            currentBeatCount++;
+            
+            // ⭐ 비트 전환 시 판정 구간 재계산
+            if (!_judgmentCacheValid)
+                UpdateJudgmentWindows();
+            
+            OnBeatCounted.Invoke(currentBeatCount);
         }
     }
     
     /// <summary>
-    /// 입력 타이밍에 대한 판정을 반환합니다.
+    /// ⭐ 판정 구간 사전 계산 (매 프레임 계산 제거)
+    /// </summary>
+    void UpdateJudgmentWindows()
+    {
+        _perfectWindowStart = beatInterval - perfectTolerance;
+        _perfectWindowEnd = perfectTolerance;
+        _greatWindowStart = beatInterval - beatTolerance;
+        _greatWindowEnd = beatTolerance;
+        _judgmentCacheValid = true;
+    }
+    
+    /// <summary>
+    /// ⭐ 캐시된 구간으로 판정 (분기 최소화)
     /// </summary>
     public RhythmJudgment CheckJudgment() 
     {
-        float timeFromBeatStart = _timeSinceLastBeat; 
-        float timeToNextBeat = beatInterval - timeFromBeatStart; 
+        float t = _timeSinceLastBeat;
 
-        float deviation = Mathf.Min(timeFromBeatStart, timeToNextBeat);
-
-        if (deviation <= perfectTolerance)
+        // Perfect 체크 (비트 시작 또는 끝)
+        if (t <= _perfectWindowEnd || t >= _perfectWindowStart)
             return RhythmJudgment.Perfect;
-        else if (deviation <= beatTolerance)
+
+        // Great 체크
+        if (t <= _greatWindowEnd || t >= _greatWindowStart)
             return RhythmJudgment.Great;
-        else
-            return RhythmJudgment.Miss;
+
+        return RhythmJudgment.Miss;
     }
     
-    /// <summary>
-    /// 현재 비트 진행도 (0~1)
-    /// </summary>
-    public float GetBeatProgress()
-    {
-        return _timeSinceLastBeat / beatInterval;
-    }
+    public float GetBeatProgress() => _timeSinceLastBeat / beatInterval;
+    public float GetTimeToNextBeat() => beatInterval - _timeSinceLastBeat;
     
     /// <summary>
-    /// 다음 비트까지 남은 시간 (초)
+    /// BPM 변경 시 호출 (판정 구간 재계산 트리거)
     /// </summary>
-    public float GetTimeToNextBeat()
+    public void SetBPM(float newBPM)
     {
-        return beatInterval - _timeSinceLastBeat;
+        bpm = newBPM;
+        beatInterval = 60f / bpm;
+        _judgmentCacheValid = false;
+        UpdateJudgmentWindows();
     }
 }

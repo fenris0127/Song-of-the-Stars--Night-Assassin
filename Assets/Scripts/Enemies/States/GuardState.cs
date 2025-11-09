@@ -9,10 +9,15 @@ public abstract class GuardState
     protected GuardRhythmPatrol guard;
     protected Rigidbody2D guardRigidbody;
     protected Transform guardTransform;
-    protected RhythmSyncManager rhythmManager;
-    protected PlayerController playerController;
-    protected MissionManager missionManager;
-    protected PlayerStealth playerStealth;
+    protected RhythmSyncManager RhythmManager => GameServices.RhythmManager;
+    protected PlayerController Player => GameServices.Player;
+    protected MissionManager MissionManager => GameServices.MissionManager;
+    protected PlayerStealth PlayerStealth => GameServices.PlayerStealth;
+
+    // 로깅을 위한 상태 이름
+    protected virtual string StateName => GetType().Name;
+    protected float stateStartTime;
+    protected Vector3 stateStartPosition;
 
     public GuardState(GuardRhythmPatrol guard)
     {
@@ -21,23 +26,28 @@ public abstract class GuardState
         this.guardTransform = guard.transform;
         
         // ⭐ GameServices 사용
-        this.rhythmManager = GameServices.RhythmManager;
-        this.playerController = GameServices.Player;
-        this.playerStealth = GameServices.PlayerStealth;
-        this.missionManager = GameServices.MissionManager;
-        
-        if (rhythmManager == null)
+        if (RhythmManager == null)
             Debug.LogError($"[GuardState] RhythmSyncManager를 찾을 수 없습니다!");
-        if (playerController == null)
+        if (Player == null)
             Debug.LogError($"[GuardState] PlayerController를 찾을 수 없습니다!");
-        if (missionManager == null)
+        if (MissionManager == null)
             Debug.LogError($"[GuardState] MissionManager를 찾을 수 없습니다!");
-        if (playerStealth == null)
+        if (PlayerStealth == null)
             Debug.LogError($"[GuardState] PlayerStealth를 찾을 수 없습니다!");
     }
 
     // 상태 진입 시 호출
-    public virtual void Enter() { }
+    public virtual void Enter()
+    {
+        stateStartTime = Time.time;
+        stateStartPosition = guardTransform.position;
+        
+        string rhythmInfo = RhythmManager != null ? $"비트: {RhythmManager.currentBeatCount}" : "리듬 매니저 없음";
+        Debug.Log($"[{guard.name}] {StateName} 상태 진입 @ {Time.time:F2}초\n" +
+                 $"위치: {stateStartPosition:F2}\n" +
+                 $"{rhythmInfo}\n" +
+                 $"플레이어와의 거리: {(Player != null ? Vector3.Distance(stateStartPosition, Player.transform.position).ToString("F2") : "N/A")}");
+    }
 
     // 매 프레임 업데이트
     public virtual void Update() { }
@@ -46,7 +56,16 @@ public abstract class GuardState
     public virtual void OnBeat(int currentBeat) { }
 
     // 상태 종료 시 호출
-    public virtual void Exit() { }
+    public virtual void Exit()
+    {
+        float stateDuration = Time.time - stateStartTime;
+        Vector3 totalMovement = guardTransform.position - stateStartPosition;
+        
+        Debug.Log($"[{guard.name}] {StateName} 상태 종료 @ {Time.time:F2}초\n" +
+                 $"상태 지속 시간: {stateDuration:F2}초\n" +
+                 $"이동 거리: {totalMovement.magnitude:F2}m\n" +
+                 $"평균 이동 속도: {(totalMovement.magnitude / stateDuration):F2}m/s");
+    }
 
     // 상태 전환 래퍼
     protected void ChangeState(GuardState newState) => guard.ChangeState(newState);
@@ -79,10 +98,10 @@ public abstract class GuardState
     protected bool CheckPlayerInSight(out RaycastHit2D hit)
     {
         hit = default;
-        if (playerController == null || playerStealth == null) return false;
+        if (Player == null || PlayerStealth == null) return false;
 
         Vector2 guardPos = guardRigidbody.position;
-        Vector2 playerPos = playerController.transform.position;
+        Vector2 playerPos = Player.transform.position;
         Vector2 directionToPlayer = (playerPos - guardPos).normalized;
         float distanceToPlayer = Vector2.Distance(guardPos, playerPos);
 

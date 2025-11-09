@@ -10,17 +10,28 @@ public class GuardPatrollingState : GuardState
     public GuardPatrollingState(GuardRhythmPatrol guard) : base(guard)
     {
         currentPatrolInterval = guard.patrolBeatIntervalMax;
-           nextMoveBeat = rhythmManager.currentBeatCount + currentPatrolInterval;
+           nextMoveBeat = RhythmManager.currentBeatCount + currentPatrolInterval;
     }
 
     public override void Enter()
     {
+        base.Enter(); // 기본 로깅
+        
         if (guard.patrolPoints.Count > 0)
             targetPosition = guard.patrolPoints[patrolIndex];
         else
             targetPosition = guardRigidbody.position;
 
-        Debug.Log($"경비병 {guard.name}: 순찰 상태 시작");
+        // 순찰 상태 특화 로깅
+        string patrolInfo = guard.patrolPoints.Count > 0 
+            ? $"순찰 경로 포인트 수: {guard.patrolPoints.Count}\n현재 포인트 인덱스: {patrolIndex}"
+            : "고정 위치 순찰";
+
+        Debug.Log($"[{guard.name}] 순찰 상태 추가 정보:\n" +
+                 $"{patrolInfo}\n" +
+                 $"다음 이동 비트: {nextMoveBeat}\n" +
+                 $"현재 순찰 간격: {currentPatrolInterval} 비트\n" +
+                 $"목표 위치: {targetPosition:F2}");
     }
 
     public override void Update()
@@ -30,7 +41,9 @@ public class GuardPatrollingState : GuardState
         if (CheckPlayerInSight(out hit))
         {
             var player = hit.collider.GetComponent<PlayerController>();
-            if (player != null && playerStealth != null && !playerStealth.isStealthActive && !player.isIllusionActive)
+            if (player != null && PlayerStealth != null &&
+                !PlayerStealth.isStealthActive &&
+                !player.isIllusionActive)
             {
                 guard.ChangeState(new GuardChasingState(guard));
                 return;

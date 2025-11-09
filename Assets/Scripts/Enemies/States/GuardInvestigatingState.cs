@@ -16,9 +16,17 @@ public class GuardInvestigatingState : GuardState
 
     public override void Enter()
     {
+        base.Enter(); // 기본 로깅
+        
         investigationStartTime = Time.time;
         RotateTowards(investigatePosition);
-        Debug.Log($"경비병 {guard.name}: 수상한 소리 조사 시작 @ {investigatePosition}");
+        
+        // 조사 상태 특화 로깅
+        Debug.Log($"[{guard.name}] 조사 상태 추가 정보:\n" +
+                 $"조사 위치: {investigatePosition:F2}\n" +
+                 $"현재 위치에서 거리: {Vector2.Distance(guardRigidbody.position, investigatePosition):F2}m\n" +
+                 $"예상 조사 시간: {INVESTIGATION_DURATION:F1}초\n" +
+                 $"조사 범위: {INVESTIGATION_RADIUS:F1}m");
     }
 
     public override void Update()
@@ -27,8 +35,10 @@ public class GuardInvestigatingState : GuardState
         RaycastHit2D hit;
         if (CheckPlayerInSight(out hit))
         {
-            var player = hit.collider.GetComponent<PlayerController>();
-            if (player != null && playerStealth != null && !playerStealth.isStealthActive && !player.isIllusionActive)
+            var Player = hit.collider.GetComponent<PlayerController>();
+            if (Player != null && PlayerStealth != null &&
+                !PlayerStealth.isStealthActive &&
+                !Player.isIllusionActive)
             {
                 ChangeState(new GuardChasingState(guard));
                 return;
@@ -59,6 +69,5 @@ public class GuardInvestigatingState : GuardState
         MissionManager?.IncreaseAlertLevel(1);
     }
 
-    // GuardRhythmPatrol의 missionManager 접근용
     
 }

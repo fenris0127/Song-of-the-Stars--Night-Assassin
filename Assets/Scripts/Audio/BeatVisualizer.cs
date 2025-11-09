@@ -17,7 +17,6 @@ public class BeatVisualizer : MonoBehaviour
     public float indicatorWidth = 800f;
 
     private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
-    // private RhythmSyncManager _rhythmManager;
     
     private float _halfIndicatorWidth;
     private float _perfectZoneWidthCache;

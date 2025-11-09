@@ -27,19 +27,13 @@ public class PlayerController : MonoBehaviour
     private bool _isDecoyActive;
     private int _decoyEndBeat;
 
-    /// <summary>
-    /// 현재 활성화된 데코이의 오브젝트
-    /// </summary>
+    // 현재 활성화된 데코이의 오브젝트
     public GameObject DecoyObject => _currentDecoy;
 
-    /// <summary>
-    /// 데코이의 현재 위치
-    /// </summary>
+    // 데코이의 현재 위치
     public Vector2 DecoyPosition => _currentDecoy != null ? _currentDecoy.transform.position : Vector2.zero;
 
-    /// <summary>
-    /// 데코이가 현재 활성화되어 있는지 여부
-    /// </summary>
+    // 데코이가 현재 활성화되어 있는지 여부
     public bool isDecoyActive => _isDecoyActive && _currentDecoy != null;
     #endregion
     
@@ -57,6 +51,7 @@ public class PlayerController : MonoBehaviour
 
     private bool _subscribedToBeatEvent = false;
     private bool _subscribedToMovementEvent = false;
+    private bool isIllusionActive = false;
     #endregion
 
     void Awake()

@@ -1,11 +1,7 @@
 using UnityEngine;
-using System.Collections.Generic;  // For List<T>
 
 /// <summary>
-/// 게임의 모든 핵심 매니저와 시스템에 대한 중앙 참조 관리자
-/// FindObjectOfType 호출을 제거하여 성능을 개선합니다.
-/// 
-/// 사용법: GameServices.RhythmManager, GameServices.Player 등
+/// 게임 핵심 매니저 중앙 참조 - Null 체크 최적화 및 캐싱 강화
 /// </summary>
 public class GameServices : MonoBehaviour
 {
@@ -29,12 +25,11 @@ public class GameServices : MonoBehaviour
     [SerializeField] private VFXManager _vfxManager;
     [SerializeField] private TutorialManager _tutorialManager;
     #endregion
-    
-    private static bool _managersCached = false;
 
-    #region Public Properties (Optimized)
-    // RhythmSyncManager의 참조를 지연 로딩 및 캐싱하여 반환합니다.
-    // FindObjectOfType 호출을 최소화합니다.
+    #region Cached Properties (⭐ Null 체크 최적화)
+    private static bool _managersCached = false;
+    
+    // Managers
     public static RhythmSyncManager RhythmManager
     {
         get
@@ -45,7 +40,7 @@ public class GameServices : MonoBehaviour
             return Instance._rhythmManager;
         }
     }
-    
+
     public static MissionManager MissionManager
     {
         get
@@ -56,7 +51,7 @@ public class GameServices : MonoBehaviour
             return Instance._missionManager;
         }
     }
-    
+
     public static UIManager UIManager
     {
         get
@@ -79,47 +74,47 @@ public class GameServices : MonoBehaviour
             return Instance._playerController;
         }
     }
-    
+
     public static PlayerStealth PlayerStealth
     {
         get
         {
             if (Instance == null) return null;
-            if (Instance._playerStealth == null && !_managersCached)
-                Instance._playerStealth = FindAnyObjectByType<PlayerStealth>();
+            if (Instance._playerStealth == null && Instance._playerController != null)
+                Instance._playerStealth = Instance._playerController.GetComponent<PlayerStealth>();
             return Instance._playerStealth;
         }
     }
-    
+
     public static PlayerAssassination PlayerAssassination
     {
         get
         {
             if (Instance == null) return null;
-            if (Instance._playerAssassination == null && !_managersCached)
-                Instance._playerAssassination = FindAnyObjectByType<PlayerAssassination>();
+            if (Instance._playerAssassination == null && Instance._playerController != null)
+                Instance._playerAssassination = Instance._playerController.GetComponent<PlayerAssassination>();
             return Instance._playerAssassination;
         }
     }
-    
+
     public static RhythmPatternChecker RhythmChecker
     {
         get
         {
             if (Instance == null) return null;
-            if (Instance._rhythmChecker == null && !_managersCached)
-                Instance._rhythmChecker = FindAnyObjectByType<RhythmPatternChecker>();
+            if (Instance._rhythmChecker == null && Instance._playerController != null)
+                Instance._rhythmChecker = Instance._playerController.GetComponent<RhythmPatternChecker>();
             return Instance._rhythmChecker;
         }
     }
-    
+
     public static SkillLoadoutManager SkillLoadout
     {
         get
         {
             if (Instance == null) return null;
-            if (Instance._skillLoadout == null && !_managersCached)
-                Instance._skillLoadout = FindAnyObjectByType<SkillLoadoutManager>();
+            if (Instance._skillLoadout == null && Instance._playerController != null)
+                Instance._skillLoadout = Instance._playerController.GetComponent<SkillLoadoutManager>();
             return Instance._skillLoadout;
         }
     }
@@ -135,7 +130,7 @@ public class GameServices : MonoBehaviour
             return Instance._minimapController;
         }
     }
-    
+
     public static VFXManager VFXManager
     {
         get
@@ -146,7 +141,7 @@ public class GameServices : MonoBehaviour
             return Instance._vfxManager;
         }
     }
-    
+
     public static TutorialManager TutorialManager
     {
         get
@@ -158,6 +153,13 @@ public class GameServices : MonoBehaviour
         }
     }
 
+    // Singleton Managers (DontDestroyOnLoad)
+    public static SFXManager SFX => SFXManager.Instance;
+    public static DifficultyManager Difficulty => DifficultyManager.Instance;
+    public static SaveSystem SaveSystem => SaveSystem.Instance;
+    public static GameManager GameManager => GameManager.Instance;
+    public static ObjectPoolManager ObjectPool => ObjectPoolManager.Instance;
+    public static VFXManager_Pooled VFXPooled => VFXManager_Pooled.Instance;
     #endregion
 
     void Awake()
@@ -165,120 +167,111 @@ public class GameServices : MonoBehaviour
         if (Instance == null)
         {
             Instance = this;
-            DontDestroyOnLoad(gameObject);
-            AutoFindReferences();
+            _managersCached = false;
         }
-        else if (Instance != this)
+        else
+        {
             Destroy(gameObject);
+            return;
+        }
+
+        AutoFindReferences();
     }
 
-    // Inspector에서 할당되지 않은 참조를 자동으로 찾습니다.
     void AutoFindReferences()
     {
-        // 씬에서 찾거나, 이미 할당된 값 유지
-        if (_rhythmManager == null) _rhythmManager = FindAnyObjectByType<RhythmSyncManager>();
-        if (_missionManager == null) _missionManager = FindAnyObjectByType<MissionManager>();
-        if (_uiManager == null) _uiManager = FindAnyObjectByType<UIManager>();
-        
-        if (_playerController == null) _playerController = FindAnyObjectByType<PlayerController>();
-        if (_playerStealth == null) _playerStealth = FindAnyObjectByType<PlayerStealth>();
-        if (_playerAssassination == null) _playerAssassination = FindAnyObjectByType<PlayerAssassination>();
-        if (_rhythmChecker == null) _rhythmChecker = FindAnyObjectByType<RhythmPatternChecker>();
-        if (_skillLoadout == null) _skillLoadout = FindAnyObjectByType<SkillLoadoutManager>();
+        bool anyMissing = false;
 
-        if (_minimapController == null) _minimapController = FindAnyObjectByType<MinimapController>();
-        if (_vfxManager == null) _vfxManager = FindAnyObjectByType<VFXManager>();
-        if (_tutorialManager == null) _tutorialManager = FindAnyObjectByType<TutorialManager>();
+        if (_rhythmManager == null)
+        {
+            _rhythmManager = FindAnyObjectByType<RhythmSyncManager>();
+            anyMissing |= _rhythmManager == null;
+        }
+
+        if (_missionManager == null)
+        {
+            _missionManager = FindAnyObjectByType<MissionManager>();
+            anyMissing |= _missionManager == null;
+        }
+
+        if (_uiManager == null)
+        {
+            _uiManager = FindAnyObjectByType<UIManager>();
+            anyMissing |= _uiManager == null;
+        }
+
+        if (_playerController == null)
+        {
+            _playerController = FindAnyObjectByType<PlayerController>();
+            
+            if (_playerController != null)
+            {
+                _playerStealth = _playerController.GetComponent<PlayerStealth>();
+                _playerAssassination = _playerController.GetComponent<PlayerAssassination>();
+                _rhythmChecker = _playerController.GetComponent<RhythmPatternChecker>();
+                _skillLoadout = _playerController.GetComponent<SkillLoadoutManager>();
+            }
+        }
+
+        if (_minimapController == null)
+            _minimapController = FindAnyObjectByType<MinimapController>();
+
+        if (_vfxManager == null)
+            _vfxManager = FindAnyObjectByType<VFXManager>();
+
+        if (_tutorialManager == null)
+            _tutorialManager = FindAnyObjectByType<TutorialManager>();
+
+        _managersCached = !anyMissing;
         
-        _managersCached = true; // 최초 로딩 완료 표시
         ValidateReferences();
     }
 
     void ValidateReferences()
     {
         if (_rhythmManager == null)
-            Debug.LogWarning("[GameServices] RhythmSyncManager를 찾을 수 없습니다!");
+            Debug.LogWarning("[GameServices] RhythmSyncManager 미할당");
 
         if (_playerController == null)
-            Debug.LogWarning("[GameServices] PlayerController를 찾을 수 없습니다!");
+            Debug.LogWarning("[GameServices] PlayerController 미할당");
 
         if (_missionManager == null)
-            Debug.LogWarning("[GameServices] MissionManager를 찾을 수 없습니다!");
+            Debug.LogWarning("[GameServices] MissionManager 미할당");
     }
 
-    // 씬 전환 후 참조를 다시 찾습니다.
     public static void RefreshReferences()
     {
-        _managersCached = false;
         if (Instance != null)
+        {
+            _managersCached = false;
             Instance.AutoFindReferences();
+        }
     }
 
     void OnDestroy()
     {
         if (Instance == this)
+        {
             Instance = null;
+            _managersCached = false;
+        }
     }
 
     #region Helper Methods
-    // 게임이 일시정지 상태인지 확인합니다.
-    public static bool IsPaused() => GameManager.Instance != null && GameManager.Instance.isPaused;
-
-    // 현재 비트 카운트를 반환합니다.
+    public static bool IsPaused() => GameManager != null && GameManager.isPaused;
     public static int CurrentBeat() => RhythmManager != null ? RhythmManager.currentBeatCount : 0;
-
-    // 비트 간격을 반환합니다.
     public static float BeatInterval() => RhythmManager != null ? RhythmManager.beatInterval : 0.5f;
-
-    // 플레이어 위치를 반환합니다.
     public static Vector3 PlayerPosition() => Player != null ? Player.transform.position : Vector3.zero;
-
-    // Centralized physics helpers to avoid assembly/lookup issues
-    private static ContactFilter2D _filter = ContactFilter2D.noFilter;  // Using the static property instead of deprecated method
-    private static readonly List<Collider2D> _tempColliders = new List<Collider2D>();
-    private static readonly List<RaycastHit2D> _tempRaycastHits = new List<RaycastHit2D>();
-
-    private static ContactFilter2D GetFilter(LayerMask mask)
+    
+    /// <summary>
+    /// 모든 필수 매니저가 준비되었는지 확인
+    /// </summary>
+    public static bool IsReady()
     {
-        _filter.SetLayerMask(mask);
-        _filter.useLayerMask = true;
-        return _filter;
-    }
-
-    public static int OverlapCircleCompat(Vector2 point, float radius, LayerMask mask, Collider2D[] results)
-    {
-        if (results == null || results.Length == 0) return 0;
-
-        int count = Physics2D.OverlapCircle(point, radius, GetFilter(mask), _tempColliders);
-        count = Mathf.Min(count, results.Length);
-
-        for (int i = 0; i < count; i++)
-            results[i] = _tempColliders[i];
-        for (int i = count; i < results.Length; i++)
-            results[i] = null;
-
-        return count;
-    }
-
-    public static bool RaycastCompat(Vector2 origin, Vector2 direction, out RaycastHit2D hit, float distance = Mathf.Infinity, int layerMask = Physics2D.DefaultRaycastLayers)
-    {
-        if (Physics2D.Raycast(origin, direction, GetFilter(layerMask), _tempRaycastHits, distance) > 0)
-        {
-            hit = _tempRaycastHits[0];
-            return true;
-        }
-        hit = default;
-        return false;
-    }
-
-    public static bool HasLineOfSight(Vector2 from, Vector2 to, LayerMask obstacleMask)
-    {
-        Vector2 direction = to - from;
-        float distance = direction.magnitude;
-        direction.Normalize();
-
-        // Return true if there are NO obstacles (raycast hit count is 0)
-        return Physics2D.Raycast(from, direction, GetFilter(obstacleMask), _tempRaycastHits, distance) == 0;
+        return Instance != null && 
+               RhythmManager != null && 
+               Player != null && 
+               MissionManager != null;
     }
     #endregion
 }

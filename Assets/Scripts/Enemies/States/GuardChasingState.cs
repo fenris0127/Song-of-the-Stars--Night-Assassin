@@ -9,13 +9,25 @@ public class GuardChasingState : GuardState
 
     public override void Enter()
     {
-        Debug.Log($"경비병 {guardTransform.name}: 추격 상태 시작");
-        missionManager?.IncreaseAlertLevel(1); // 즉시 경계 수준 상승
+        base.Enter(); // 기본 로깅
+
+        MissionManager?.IncreaseAlertLevel(1); // 즉시 경계 수준 상승
+        
+        // 추격 상태 특화 로깅
+        if (Player != null)
+        {
+            Vector3 directionToPlayer = Player.transform.position - guardTransform.position;
+            Debug.Log($"[{guard.name}] 추격 상태 추가 정보:\n" +
+                     $"플레이어 방향: {directionToPlayer.normalized:F2}\n" +
+                     $"플레이어까지 거리: {directionToPlayer.magnitude:F2}m\n" +
+                     $"경계 레벨: {(MissionManager != null ? MissionManager.CurrentAlertLevel.ToString() : "N/A")}\n" +
+                     $"플레이어 스텔스 상태: {(PlayerStealth != null ? PlayerStealth.isStealthActive.ToString() : "N/A")}");
+        }
     }
 
     public override void Update()
     {
-        if (playerController == null) return;
+        if (Player == null) return;
 
         RaycastHit2D hit;
         bool canSeePlayer = CheckPlayerInSight(out hit);
@@ -37,12 +49,12 @@ public class GuardChasingState : GuardState
                         detectionTime += Time.deltaTime;
                         if (detectionTime >= guard.timeToFullDetection)
                         {
-                            missionManager?.MissionComplete(false);
+                            MissionManager?.MissionComplete(false);
                         }
                     }
                     else
                     {
-                        missionManager?.MissionComplete(false);
+                        MissionManager?.MissionComplete(false);
                     }
                 }
                 else
@@ -65,6 +77,6 @@ public class GuardChasingState : GuardState
     public override void OnBeat(int currentBeat)
     {
         // 리듬에 맞춰 경계 레벨 증가
-        missionManager?.IncreaseAlertLevel(1);
+        MissionManager?.IncreaseAlertLevel(1);
     }
 }
