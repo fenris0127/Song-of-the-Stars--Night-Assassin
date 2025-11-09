@@ -143,41 +143,34 @@ public class GuardRhythmPatrol : MonoBehaviour
 /// </summary>
 public bool CheckForDecoy()
 {
-    // ⭐ 1. PlayerController에서 활성화된 데코이 위치를 가져오는 로직이 필요합니다.
-    //      (가정: Player.DecoyPosition 필드 또는 GetDecoyPosition() 메서드 존재)
-    if (Player == null || !Player.isDecoyActive)
+    // ⭐ PlayerController에 isDecoyActive, DecoyPosition, DecoyObject 속성이 있다고 가정
+    if (Player == null || !Player.isDecoyActive) 
         return false;
 
-    Vector2 decoyPos = Player.DecoyPosition;
+    Vector2 decoyPos = Player.DecoyPosition; 
+    Vector2 guardPosition2D = _cachedTransform.position;
 
     // 2. 데코이가 현재 경비병의 시야 거리 내에 있는지 확인
-    Vector2 guardPos = (Vector2)_cachedTransform.position;
-    float distanceToDecoy = Vector2.Distance(guardPos, decoyPos);
+    float distanceToDecoy = Vector2.Distance(guardPosition2D, decoyPos);
     if (distanceToDecoy > viewDistance)
         return false;
 
     // 3. 데코이가 시야각 내에 있는지 확인
-    Vector2 directionToDecoy = (decoyPos - guardPos).normalized;
-    Vector2 guardForward = (Vector2)_cachedTransform.up;
+    Vector2 directionToDecoy = (decoyPos - guardPosition2D).normalized;
+    Vector2 guardForward = _cachedTransform.up; 
     
     if (Vector2.Angle(guardForward, directionToDecoy) < fieldOfViewAngle / 2f)
     {
-        // 4. 장애물 레이캐스트 체크
-        // ObstacleMask를 사용하여 데코이까지의 경로에 장애물이 있는지 확인합니다.
-        RaycastHit2D hit;
-        if (!GameServices.RaycastCompat(guardPos, directionToDecoy, out hit, distanceToDecoy, ObstacleMask))
-        {
-            // 장애물 없음 - 감지 성공
-            return true;
-        }
-        // hit된 오브젝트가 데코이 본인이라면 감지 성공
-        if (hit.collider.gameObject == Player.DecoyObject)
+        // 4. 장애물 레이캐스트 체크 (Physics2D.Raycast는 정적 메서드)
+        RaycastHit2D hit = Physics2D.Raycast(_cachedTransform.position, directionToDecoy, distanceToDecoy, ObstacleMask);
+        
+        // hit.collider가 없거나, hit된 오브젝트가 데코이 본인이라면 감지 성공
+        if (hit.collider == null || (Player.DecoyObject != null && hit.collider.gameObject == Player.DecoyObject)) 
         {
             // 데코이 감지 성공! 조사할 위치를 저장합니다.
             lastDecoyPosition = decoyPos;
             
-            // ⭐ 부가적으로, 감지 후 데코이를 비활성화하는 로직이 DecoyManager/PlayerController에 있어야 합니다.
-            // Player.DeactivateDecoy(); 
+            // Player.DeactivateDecoy(); // 필요하다면 데코이 비활성화 로직 추가
             
             return true;
         }

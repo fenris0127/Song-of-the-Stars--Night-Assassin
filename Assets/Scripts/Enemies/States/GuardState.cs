@@ -9,10 +9,10 @@ public abstract class GuardState
     protected GuardRhythmPatrol guard;
     protected Rigidbody2D guardRigidbody;
     protected Transform guardTransform;
-    protected RhythmSyncManager RhythmManager => GameServices.RhythmManager;
-    protected PlayerController Player => GameServices.Player;
-    protected MissionManager MissionManager => GameServices.MissionManager;
-    protected PlayerStealth PlayerStealth => GameServices.PlayerStealth;
+    protected RhythmSyncManager rhythmManager => GameServices.RhythmManager;
+    protected PlayerController player => GameServices.Player;
+    protected MissionManager missionManager => GameServices.MissionManager;
+    protected PlayerStealth playerStealth => GameServices.PlayerStealth;
 
     // 로깅을 위한 상태 이름
     protected virtual string StateName => GetType().Name;
@@ -26,13 +26,13 @@ public abstract class GuardState
         this.guardTransform = guard.transform;
         
         // ⭐ GameServices 사용
-        if (RhythmManager == null)
+        if (rhythmManager == null)
             Debug.LogError($"[GuardState] RhythmSyncManager를 찾을 수 없습니다!");
-        if (Player == null)
+        if (player == null)
             Debug.LogError($"[GuardState] PlayerController를 찾을 수 없습니다!");
-        if (MissionManager == null)
+        if (missionManager == null)
             Debug.LogError($"[GuardState] MissionManager를 찾을 수 없습니다!");
-        if (PlayerStealth == null)
+        if (playerStealth == null)
             Debug.LogError($"[GuardState] PlayerStealth를 찾을 수 없습니다!");
     }
 
@@ -42,11 +42,11 @@ public abstract class GuardState
         stateStartTime = Time.time;
         stateStartPosition = guardTransform.position;
         
-        string rhythmInfo = RhythmManager != null ? $"비트: {RhythmManager.currentBeatCount}" : "리듬 매니저 없음";
+        string rhythmInfo = rhythmManager != null ? $"비트: {rhythmManager.currentBeatCount}" : "리듬 매니저 없음";
         Debug.Log($"[{guard.name}] {StateName} 상태 진입 @ {Time.time:F2}초\n" +
                  $"위치: {stateStartPosition:F2}\n" +
                  $"{rhythmInfo}\n" +
-                 $"플레이어와의 거리: {(Player != null ? Vector3.Distance(stateStartPosition, Player.transform.position).ToString("F2") : "N/A")}");
+                 $"플레이어와의 거리: {(player != null ? Vector3.Distance(stateStartPosition, player.transform.position).ToString("F2") : "N/A")}");
     }
 
     // 매 프레임 업데이트
@@ -98,10 +98,11 @@ public abstract class GuardState
     protected bool CheckPlayerInSight(out RaycastHit2D hit)
     {
         hit = default;
-        if (Player == null || PlayerStealth == null) return false;
+        if (player == null || playerStealth == null) return false;
 
-        Vector2 guardPos = guardRigidbody.position;
-        Vector2 playerPos = Player.transform.position;
+        Vector2 guardPos = guard.transform.position; 
+        Vector2 playerPos = player.transform.position; 
+        
         Vector2 directionToPlayer = (playerPos - guardPos).normalized;
         float distanceToPlayer = Vector2.Distance(guardPos, playerPos);
 
@@ -110,10 +111,15 @@ public abstract class GuardState
         if (Vector2.Angle(guardForward, directionToPlayer) < guard.fieldOfViewAngle / 2f && 
         distanceToPlayer <= guard.viewDistance)
         {
-            if (GameServices.RaycastCompat(guardPos, directionToPlayer, out hit, guard.viewDistance, guard.ObstacleMask))
-            {
-                return hit.collider.GetComponent<PlayerController>() != null;
-            }
+            hit = Physics2D.Raycast(guardPos, directionToPlayer, guard.viewDistance, guard.ObstacleMask);
+            
+            // hit.collider가 없거나, 플레이어 콜라이더라면 시야 확보
+            // 플레이어 콜라이더 체크 로직 추가 (필요시)
+            if (hit.collider == null || hit.collider.GetComponent<PlayerController>() != null)
+                return true;
+            
+            // 장애물이 감지되었지만, 플레이어가 아닌 다른 오브젝트라면 실패
+            return false;
         }
 
         return false;

@@ -7,7 +7,7 @@ public class GuardStunnedState : GuardState
 
     public GuardStunnedState(GuardRhythmPatrol guard, int duration, bool isFlashbang = false) : base(guard)
     {
-        this.recoveryBeat = RhythmManager.currentBeatCount + duration;
+        this.recoveryBeat = rhythmManager.currentBeatCount + duration;
         this.isFlashed = isFlashbang;
     }
 

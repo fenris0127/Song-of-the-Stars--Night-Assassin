@@ -10,7 +10,7 @@ public class GuardPatrollingState : GuardState
     public GuardPatrollingState(GuardRhythmPatrol guard) : base(guard)
     {
         currentPatrolInterval = guard.patrolBeatIntervalMax;
-           nextMoveBeat = RhythmManager.currentBeatCount + currentPatrolInterval;
+           nextMoveBeat = rhythmManager.currentBeatCount + currentPatrolInterval;
     }
 
     public override void Enter()
@@ -41,8 +41,8 @@ public class GuardPatrollingState : GuardState
         if (CheckPlayerInSight(out hit))
         {
             var player = hit.collider.GetComponent<PlayerController>();
-            if (player != null && PlayerStealth != null &&
-                !PlayerStealth.isStealthActive &&
+            if (player != null && playerStealth != null &&
+                !playerStealth.isStealthActive &&
                 !player.isIllusionActive)
             {
                 guard.ChangeState(new GuardChasingState(guard));

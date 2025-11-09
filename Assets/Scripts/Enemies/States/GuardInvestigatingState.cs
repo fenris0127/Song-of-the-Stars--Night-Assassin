@@ -2,7 +2,7 @@ using UnityEngine;
 
 public class GuardInvestigatingState : GuardState
 {
-    protected MissionManager MissionManager => GameServices.MissionManager;
+    protected MissionManager missionManager => GameServices.MissionManager;
 
     private Vector2 investigatePosition;
     private float investigationStartTime;
@@ -36,8 +36,8 @@ public class GuardInvestigatingState : GuardState
         if (CheckPlayerInSight(out hit))
         {
             var Player = hit.collider.GetComponent<PlayerController>();
-            if (Player != null && PlayerStealth != null &&
-                !PlayerStealth.isStealthActive &&
+            if (Player != null && playerStealth != null &&
+                !playerStealth.isStealthActive &&
                 !Player.isIllusionActive)
             {
                 ChangeState(new GuardChasingState(guard));
@@ -50,10 +50,7 @@ public class GuardInvestigatingState : GuardState
 
         // 조사 지점 도착 후 주변 순찰
         if (Vector2.Distance(guardRigidbody.position, investigatePosition) < 0.5f)
-        {
-            // 제자리에서 천천히 회전
-            guardTransform.Rotate(0, 0, 45f * Time.deltaTime);
-        }
+            guardTransform.Rotate(0, 0, 45f * Time.deltaTime); // 제자리에서 천천히 회전
 
         // 조사 시간 초과 시 순찰로 복귀
         if (Time.time - investigationStartTime > INVESTIGATION_DURATION)
@@ -63,11 +60,6 @@ public class GuardInvestigatingState : GuardState
         }
     }
 
-    public override void OnBeat(int currentBeat)
-    {
-        // 리듬에 맞춰 경계 레벨 약간 증가
-        MissionManager?.IncreaseAlertLevel(1);
-    }
-
-    
+    // 리듬에 맞춰 경계 레벨 약간 증가
+    public override void OnBeat(int currentBeat) => missionManager?.IncreaseAlertLevel(1);
 }

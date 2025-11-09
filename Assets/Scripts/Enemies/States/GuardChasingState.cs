@@ -11,23 +11,23 @@ public class GuardChasingState : GuardState
     {
         base.Enter(); // 기본 로깅
 
-        MissionManager?.IncreaseAlertLevel(1); // 즉시 경계 수준 상승
+        missionManager?.IncreaseAlertLevel(1); // 즉시 경계 수준 상승
         
         // 추격 상태 특화 로깅
-        if (Player != null)
+        if (player != null)
         {
-            Vector3 directionToPlayer = Player.transform.position - guardTransform.position;
+            Vector3 directionToPlayer = player.transform.position - guardTransform.position;
             Debug.Log($"[{guard.name}] 추격 상태 추가 정보:\n" +
                      $"플레이어 방향: {directionToPlayer.normalized:F2}\n" +
                      $"플레이어까지 거리: {directionToPlayer.magnitude:F2}m\n" +
-                     $"경계 레벨: {(MissionManager != null ? MissionManager.CurrentAlertLevel.ToString() : "N/A")}\n" +
-                     $"플레이어 스텔스 상태: {(PlayerStealth != null ? PlayerStealth.isStealthActive.ToString() : "N/A")}");
+                     $"경계 레벨: {(missionManager != null ? missionManager.currentAlertLevel.ToString() : "N/A")}\n" +
+                     $"플레이어 스텔스 상태: {(playerStealth != null ? playerStealth.isStealthActive.ToString() : "N/A")}");
         }
     }
 
     public override void Update()
     {
-        if (Player == null) return;
+        if (player == null) return;
 
         RaycastHit2D hit;
         bool canSeePlayer = CheckPlayerInSight(out hit);
@@ -48,20 +48,13 @@ public class GuardChasingState : GuardState
                     {
                         detectionTime += Time.deltaTime;
                         if (detectionTime >= guard.timeToFullDetection)
-                        {
-                            MissionManager?.MissionComplete(false);
-                        }
+                            missionManager?.MissionComplete(false);
                     }
                     else
-                    {
-                        MissionManager?.MissionComplete(false);
-                    }
+                        missionManager?.MissionComplete(false);
                 }
                 else
-                {
-                    // 플레이어가 스텔스 상태면 수색으로 전환
-                    guard.ChangeState(new GuardInvestigatingState(guard, lastKnownPlayerPosition));
-                }
+                    guard.ChangeState(new GuardInvestigatingState(guard, lastKnownPlayerPosition)); // 플레이어가 스텔스 상태면 수색으로 전환
             }
         }
         else
@@ -74,9 +67,6 @@ public class GuardChasingState : GuardState
         }
     }
 
-    public override void OnBeat(int currentBeat)
-    {
-        // 리듬에 맞춰 경계 레벨 증가
-        MissionManager?.IncreaseAlertLevel(1);
-    }
+    // 리듬에 맞춰 경계 레벨 증가
+    public override void OnBeat(int currentBeat) => missionManager?.IncreaseAlertLevel(1);
 }

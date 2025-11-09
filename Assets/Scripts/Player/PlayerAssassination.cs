@@ -11,14 +11,16 @@ public class PlayerAssassination : MonoBehaviour
 
     private Collider2D[] _assassinationResults = new Collider2D[10];
 
-
-    /// <summary>
-    /// 근접 암살 범위 내의 경비병을 찾습니다 (2D)
-    /// </summary>
+    // 근접 암살 범위 내의 경비병을 찾습니다 (2D)
     public GuardRhythmPatrol FindGuardInAssassinationRange()
     {
         // OverlapCircleNonAlloc이 deprecated되어 OverlapCircleAll로 대체
-    int hitCount = GameServices.OverlapCircleCompat(transform.position, assassinationRange, guardMask, _assassinationResults);
+        int hitCount = Physics2D.OverlapCircleNonAlloc(
+            transform.position, 
+            assassinationRange, 
+            _assassinationResults, 
+            guardMask
+        );
 
         if (hitCount > 0)
         {
@@ -45,22 +47,30 @@ public class PlayerAssassination : MonoBehaviour
         return null;
     }
 
-    /// <summary>
     /// 원거리 암살 범위 내의 경비병을 찾습니다 (2D Raycast)
-    /// </summary>
     public GuardRhythmPatrol FindGuardInRangedRange()
     {
         if (RhythmManager == null) return null;
 
+        // Vector3 -> Vector2 암시적 변환
         Vector2 playerPos = transform.position;
         Vector2 playerForward = transform.up;
 
-        RaycastHit2D hit;
-        if (GameServices.RaycastCompat(playerPos, playerForward, out hit, maxRange, guardMask) && hit.collider != null)
+        // ⭐ 수정: GameServices.RaycastCompat 대신 Physics2D.Raycast 직접 사용
+        RaycastHit2D hit = Physics2D.Raycast(playerPos, playerForward, maxRange, guardMask | RhythmManager.obstacleMask);
+
+        if (hit.collider != null)
         {
-            // Use HasLineOfSight to check for obstacles between us and the guard
-            if (GameServices.HasLineOfSight(playerPos, hit.point, RhythmManager.obstacleMask))
-                return hit.collider.GetComponent<GuardRhythmPatrol>();
+            GuardRhythmPatrol guard = hit.collider.GetComponent<GuardRhythmPatrol>();
+
+            // 1. Raycast가 경비병을 먼저 맞췄는지 확인
+            if (guard != null)
+                return guard;
+
+            // 2. 경비병 마스크나 장애물 마스크에 해당하는 무언가를 맞췄다면
+            // 이 로직은 복잡한 HasLineOfSight 호출 없이도 작동합니다.
+            // Physics2D.Raycast를 경비병과 장애물 마스크를 모두 포함하여 호출했으므로,
+            // 만약 경비병이 아닌 장애물(ObstacleMask)이 먼저 감지되었다면 guard는 null일 것입니다.
         }
 
         return null;

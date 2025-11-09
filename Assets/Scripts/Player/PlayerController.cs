@@ -51,7 +51,7 @@ public class PlayerController : MonoBehaviour
 
     private bool _subscribedToBeatEvent = false;
     private bool _subscribedToMovementEvent = false;
-    private bool isIllusionActive = false;
+    public bool isIllusionActive = false;
     #endregion
 
     void Awake()
