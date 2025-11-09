@@ -1,15 +1,14 @@
 using UnityEngine;
 
 /// <summary>
-/// VFX(이펙트)의 수명을 리듬 비트 또는 시간 기반으로 관리합니다.
+/// VFX의 수명을 리듬 비트 또는 시간 기반으로 관리 (간소화)
 /// </summary>
 public class VFXLifetime : MonoBehaviour
 {
     private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
-    private bool _isTimeBasedLifetime = false;
     
     [Header("▶ 수명 설정")]
-    public bool useBeatDuration = true; // true: 비트 기반, false: 시간 기반
+    public bool useBeatDuration = true;
     public int durationInBeats = 2;
     public float durationInSeconds = 1f;
     
@@ -26,10 +25,20 @@ public class VFXLifetime : MonoBehaviour
     {
         if (_isInitialized) return;
     
-        if (useBeatDuration && RhythmManager != null)
+        if (useBeatDuration)
         {
-            _endBeat = RhythmManager.currentBeatCount + durationInBeats;
-            RhythmManager.OnBeatCounted.AddListener(CheckBeatTimeout);
+            if (RhythmManager != null)
+            {
+                _endBeat = RhythmManager.currentBeatCount + durationInBeats;
+                RhythmManager.OnBeatCounted.AddListener(CheckBeatTimeout);
+            }
+            else
+            {
+                // 폴백: 리듬 매니저가 없으면 시간 기반으로 전환
+                Debug.LogWarning("VFXLifetime: RhythmManager가 없어 시간 기반으로 전환합니다.");
+                useBeatDuration = false;
+                _endTime = Time.time + durationInSeconds;
+            }
         }
         else
             _endTime = Time.time + durationInSeconds;
@@ -37,9 +46,6 @@ public class VFXLifetime : MonoBehaviour
         _isInitialized = true;
     }
     
-    /// <summary>
-    /// 외부에서 비트 기반 수명 설정
-    /// </summary>
     public void SetBeatDuration(int beats)
     {
         useBeatDuration = true;
@@ -50,24 +56,27 @@ public class VFXLifetime : MonoBehaviour
             _endBeat = RhythmManager.currentBeatCount + beats;
             RhythmManager.OnBeatCounted.AddListener(CheckBeatTimeout);
         }
+        else
+        {
+            useBeatDuration = false;
+            SetTimeDuration(beats * 0.5f); // 폴백
+        }
+        
+        _isInitialized = true;
     }
     
-    /// <summary>
-    /// 외부에서 시간 기반 수명 설정
-    /// </summary>
     public void SetTimeDuration(float seconds)
     {
         useBeatDuration = false;
         durationInSeconds = seconds;
         _endTime = Time.time + seconds;
-        _isTimeBasedLifetime = true; // ⭐ 플래그 설정
-
+        _isInitialized = true;
     }
 
     void Update()
     {
-        // 시간 기반 수명 체크
-        if (_isTimeBasedLifetime && !useBeatDuration && Time.time >= _endTime)
+        // 시간 기반 수명만 Update에서 체크
+        if (!useBeatDuration && _isInitialized && Time.time >= _endTime)
             DestroyVFX();
     }
 
@@ -79,7 +88,7 @@ public class VFXLifetime : MonoBehaviour
 
     void DestroyVFX()
     {
-        if (RhythmManager != null)
+        if (RhythmManager != null && useBeatDuration)
             RhythmManager.OnBeatCounted.RemoveListener(CheckBeatTimeout);
             
         Destroy(gameObject);
@@ -87,7 +96,7 @@ public class VFXLifetime : MonoBehaviour
     
     void OnDestroy()
     {
-        if (RhythmManager != null)
+        if (RhythmManager != null && useBeatDuration)
             RhythmManager.OnBeatCounted.RemoveListener(CheckBeatTimeout);
     }
 }

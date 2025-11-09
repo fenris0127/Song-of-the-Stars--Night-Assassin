@@ -22,9 +22,14 @@ public class RhythmSyncManager : MonoBehaviour
     [Header("▶ 리듬 상태")]
     public int currentBeatCount = 0;
     private float _timeSinceLastBeat;
-    
+
     public UnityEvent<int> OnBeatCounted;
     #endregion
+    
+    // RhythmSyncManager에 판정 구간 캐싱
+    private float _nextPerfectStart;
+    private float _nextPerfectEnd;
+    private float _nextGreatEnd;
     
     void Awake()
     {
@@ -39,12 +44,20 @@ public class RhythmSyncManager : MonoBehaviour
     {
         _timeSinceLastBeat += Time.deltaTime;
 
+        // if (_timeSinceLastBeat >= beatInterval)
+        // {
+        //     _timeSinceLastBeat -= beatInterval;
+        //     currentBeatCount++;
+
+        //     OnBeatCounted.Invoke(currentBeatCount);
+        // }
+        
         if (_timeSinceLastBeat >= beatInterval)
         {
-            _timeSinceLastBeat -= beatInterval;
-            currentBeatCount++;
-            
-            OnBeatCounted.Invoke(currentBeatCount); 
+            // 비트 전환 시 한 번만 계산
+            _nextPerfectStart = beatInterval - perfectTolerance;
+            _nextPerfectEnd = perfectTolerance;
+            _nextGreatEnd = beatTolerance;
         }
     }
     

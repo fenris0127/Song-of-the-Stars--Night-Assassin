@@ -24,15 +24,19 @@ public class MinimapController : MonoBehaviour
     public Color guardNormalColor = Color.green;
     public Color guardAlertColor = Color.yellow;
     public Color guardDetectingColor = Color.red;
-    
+
+    [Header("▶ 최적화 설정")]
+    public int iconUpdateInterval = 2;     // 프레임 단위
+    public float guardUpdateInterval = 0.5f; // 초 단위
+    private int _updateFrameCounter = 0;
+    private const int ICON_UPDATE_INTERVAL = 2; // 2프레임마다 업데이트
+
+    private List<GuardRhythmPatrol> _guardsToRemove = new List<GuardRhythmPatrol>();
+
     private Transform _playerTransform;
     private GameObject _playerIcon;
     private Dictionary<GuardRhythmPatrol, MinimapIcon> _guardIcons = new Dictionary<GuardRhythmPatrol, MinimapIcon>();
     private Dictionary<GameObject, GameObject> _objectIcons = new Dictionary<GameObject, GameObject>();
-
-    private int _updateFrameCounter = 0;
-    private const int ICON_UPDATE_INTERVAL = 2; // 2프레임마다 업데이트
-    
 
     void Start()
     {
@@ -110,12 +114,17 @@ public class MinimapController : MonoBehaviour
         UpdateMinimapCamera();
         UpdatePlayerIcon();
 
-        _updateFrameCounter++;
-        if (_updateFrameCounter >= ICON_UPDATE_INTERVAL)
+        if (_updateFrameCounter++ >= iconUpdateInterval)
         {
             _updateFrameCounter = 0;
-            UpdateObjectIcons();
+            UpdateObjectIcons();      // 2프레임마다
         }
+    
+        // if ((_guardUpdateTimer += Time.deltaTime) >= guardUpdateInterval)
+        // {
+        //     _guardUpdateTimer = 0f;
+        //     UpdateGuardIcons();       // 0.5초마다
+        // }
     }
 
     void UpdateMinimapCamera()

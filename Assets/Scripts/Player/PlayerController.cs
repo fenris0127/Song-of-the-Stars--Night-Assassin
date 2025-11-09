@@ -1,11 +1,9 @@
 using UnityEngine;
-using System.Linq;
 
 public class PlayerController : MonoBehaviour
 {
     private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
 
-    // ⭐ 최적화: Vector2 상수 캐싱
     private static readonly Vector2 UP = Vector2.up;
     private static readonly Vector2 DOWN = Vector2.down;
     private static readonly Vector2 LEFT = Vector2.left;
@@ -19,12 +17,10 @@ public class PlayerController : MonoBehaviour
     [Header("▶ 스킬 설정")]
     public GameObject illusionPrefab;
     private Rigidbody2D _rigidbody;
-    private RhythmSyncManager _rhythmManager;
     private RhythmPatternChecker _rhythmChecker;
+    
     [Header("▶ Decoupling (optional)")]
-    [Tooltip("Optional ScriptableObject IntGameEvent. If assigned, PlayerController will subscribe to it for beat notifications instead of referencing RhythmSyncManager directly.")]
     public IntGameEvent beatGameEvent;
-    [Tooltip("Optional ScriptableObject Vector2GameEvent. If assigned, external input systems can raise movement commands via this event.")]
     public Vector2GameEvent movementCommandEvent;
     #endregion
 
@@ -38,11 +34,14 @@ public class PlayerController : MonoBehaviour
     public bool isIllusionActive = false;
     private int _illusionEndBeat = 0;
 
-    // Focus 시스템
     public bool isFreeMoving = false;
     private float _freeMoveEndTime = 0f;
     private const float FREE_MOVE_FOCUS_COST = 50f;
     private const int FREE_MOVE_DURATION_BEATS = 4;
+    
+    // ⭐ 이벤트 구독 추적용
+    private bool _subscribedToBeatEvent = false;
+    private bool _subscribedToMovementEvent = false;
     #endregion
 
     void Start()
@@ -58,20 +57,24 @@ public class PlayerController : MonoBehaviour
 
         _rigidbody.freezeRotation = true;
 
+        // 이벤트 구독
         if (beatGameEvent != null)
         {
             beatGameEvent.OnEvent.AddListener(CheckIllusionTimeout);
             beatGameEvent.OnEvent.AddListener(ExecuteQueuedMovement);
+            _subscribedToBeatEvent = true;
         }
         else if (RhythmManager != null)
         {
             RhythmManager.OnBeatCounted.AddListener(CheckIllusionTimeout);
             RhythmManager.OnBeatCounted.AddListener(ExecuteQueuedMovement);
+            _subscribedToBeatEvent = true;
         }
 
         if (movementCommandEvent != null)
         {
             movementCommandEvent.OnEvent.AddListener(EnqueueMovementDirection);
+            _subscribedToMovementEvent = true;
         }
 
         _targetPosition = new Vector2(transform.position.x, transform.position.y);
@@ -82,7 +85,7 @@ public class PlayerController : MonoBehaviour
         HandleChargeMovement();
 
         if (!isFreeMoving)
-            HandleRhythmMovementInput(); // WASD 이동 처리
+            HandleRhythmMovementInput();
         else
         {
             HandleFreeMoveInput();
@@ -95,20 +98,19 @@ public class PlayerController : MonoBehaviour
             AttemptActivateFreeMove();
     }
 
-    // --- 리듬 이동 로직 ---
     void HandleRhythmMovementInput()
     {
         if (_isCharging || _queuedDirection != Vector2.zero || isFreeMoving) return;
 
-        // WASD 이동 입력 (스킬 입력과 분리됨)
         Vector2 direction = Vector2.zero;
 
-        if (Input.GetKeyDown(KeyCode.W)) direction = Vector2.up;
-        else if (Input.GetKeyDown(KeyCode.S)) direction = Vector2.down;
-        else if (Input.GetKeyDown(KeyCode.A)) direction = Vector2.left;
-        else if (Input.GetKeyDown(KeyCode.D)) direction = Vector2.right;
+        if (Input.GetKeyDown(KeyCode.W)) direction = UP;
+        else if (Input.GetKeyDown(KeyCode.S)) direction = DOWN;
+        else if (Input.GetKeyDown(KeyCode.A)) direction = LEFT;
+        else if (Input.GetKeyDown(KeyCode.D)) direction = RIGHT;
 
-        if (direction != Vector2.zero) _queuedDirection = direction;
+        if (direction != Vector2.zero) 
+            _queuedDirection = direction;
     }
 
     private void EnqueueMovementDirection(Vector2 direction)
@@ -137,7 +139,7 @@ public class PlayerController : MonoBehaviour
 
             if (_queuedDirection != Vector2.zero)
             {
-                float angle = Vector2.SignedAngle(Vector2.up, _queuedDirection);
+                float angle = Vector2.SignedAngle(UP, _queuedDirection);
                 transform.rotation = Quaternion.Euler(0, 0, angle);
             }
 
@@ -175,17 +177,19 @@ public class PlayerController : MonoBehaviour
         return hit != null;
     }
 
-    // --- Focus 기반 Free Move 로직 ---
     public void AttemptActivateFreeMove()
     {
         if (isFreeMoving) return;
 
-        if (_rhythmChecker.currentFocus >= FREE_MOVE_FOCUS_COST)
+        if (_rhythmChecker != null && _rhythmChecker.currentFocus >= FREE_MOVE_FOCUS_COST)
         {
             _rhythmChecker.currentFocus -= FREE_MOVE_FOCUS_COST;
             isFreeMoving = true;
 
-            _freeMoveEndTime = Time.time + (RhythmManager.beatInterval * FREE_MOVE_DURATION_BEATS);
+            if (RhythmManager != null)
+                _freeMoveEndTime = Time.time + (RhythmManager.beatInterval * FREE_MOVE_DURATION_BEATS);
+            else
+                _freeMoveEndTime = Time.time + 2f; // 폴백
 
             _targetPosition = new Vector2(transform.position.x, transform.position.y);
         }
@@ -196,12 +200,10 @@ public class PlayerController : MonoBehaviour
         float h = Input.GetAxis("Horizontal");
         float v = Input.GetAxis("Vertical");
 
-        // ⭐ 최적화: 0 체크 먼저
         if (Mathf.Approximately(h, 0f) && Mathf.Approximately(v, 0f))
             return;
 
         Vector2 inputDir = new Vector2(h, v).normalized;
-
         Vector2 intendedPosition = _rigidbody.position + inputDir * moveSpeed * Time.deltaTime * 0.5f;
         
         if (!CheckForObstacle(intendedPosition))
@@ -220,7 +222,6 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    // --- 스킬 관련 함수 ---
     public void ActivateIllusion(int durationInBeats)
     {
         if (illusionPrefab != null && RhythmManager != null)
@@ -255,10 +256,8 @@ public class PlayerController : MonoBehaviour
         if (_chargeDistanceRemaining > 0f)
         {
             float actualStep = Mathf.Min(step, _chargeDistanceRemaining);
-
             Vector2 forward2D = new Vector2(transform.up.x, transform.up.y);
             _rigidbody.MovePosition(_rigidbody.position + forward2D * actualStep);
-
             _chargeDistanceRemaining -= actualStep;
         }
 
@@ -268,5 +267,34 @@ public class PlayerController : MonoBehaviour
             _targetPosition = new Vector2(transform.position.x, transform.position.y);
             _isMoving = false;
         }
+    }
+
+    // ⭐ 수정: 이벤트 구독 해제
+    void OnDestroy()
+    {
+        // if (_subscribedToBeatEvent)
+        // {
+        //     if (beatGameEvent != null)
+        //     {
+        //         beatGameEvent.OnEvent.RemoveListener(CheckIllusionTimeout);
+        //         beatGameEvent.OnEvent.RemoveListener(ExecuteQueuedMovement);
+        //     }
+        //     else if (RhythmManager != null)
+        //     {
+        //         RhythmManager.OnBeatCounted.RemoveListener(CheckIllusionTimeout);
+        //         RhythmManager.OnBeatCounted.RemoveListener(ExecuteQueuedMovement);
+        //     }
+        // }
+
+        if (_subscribedToBeatEvent)
+        {
+            if (beatGameEvent != null)
+                beatGameEvent.OnEvent.RemoveListener(CheckIllusionTimeout);
+            else if (RhythmManager != null)
+                RhythmManager.OnBeatCounted.RemoveListener(CheckIllusionTimeout);
+        }
+
+        if (_subscribedToMovementEvent && movementCommandEvent != null)
+            movementCommandEvent.OnEvent.RemoveListener(EnqueueMovementDirection);
     }
 }

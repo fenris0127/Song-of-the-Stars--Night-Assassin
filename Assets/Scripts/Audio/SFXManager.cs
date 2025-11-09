@@ -10,8 +10,8 @@ public class SFXManager : MonoBehaviour
     
     [Header("▶ AudioSource 풀")]
     public int audioSourcePoolSize = 10;
-    private List<AudioSource> _audioSourcePool = new List<AudioSource>();
     private int _currentPoolIndex = 0;
+    private List<AudioSource> _audioSourcePool = new List<AudioSource>();
     
     [Header("▶ 스킬 사운드")]
     public AudioClip stealthActivateSound;
@@ -45,6 +45,9 @@ public class SFXManager : MonoBehaviour
     [Range(0f, 1f)] public float masterVolume = 1f;
     [Range(0f, 1f)] public float sfxVolume = 0.8f;
     [Range(0f, 1f)] public float uiVolume = 0.6f;
+    private float _cachedSFXVolume;
+    private float _cachedUIVolume;
+
 
     void Awake()
     {
@@ -107,10 +110,29 @@ public class SFXManager : MonoBehaviour
 
     AudioSource GetAvailableAudioSource()
     {
-        // 라운드 로빈 방식으로 AudioSource 할당
-        AudioSource source = _audioSourcePool[_currentPoolIndex];
-        _currentPoolIndex = (_currentPoolIndex + 1) % _audioSourcePool.Count;
-        return source;
+        // 먼저 사용 가능한 소스 찾기
+        for (int i = 0; i < _audioSourcePool.Count; i++)
+        {
+            int index = (_currentPoolIndex + i) % _audioSourcePool.Count;
+            if (!_audioSourcePool[index].isPlaying)
+            {
+                _currentPoolIndex = (index + 1) % _audioSourcePool.Count;
+                return _audioSourcePool[index];
+            }
+        }
+
+        // 모두 사용 중이면 라운드 로빈
+        // AudioSource source = _audioSourcePool[_currentPoolIndex];
+        // _currentPoolIndex = (_currentPoolIndex + 1) % _audioSourcePool.Count;
+        // return source;
+
+        return _audioSourcePool[_currentPoolIndex++];
+    }
+    
+    void UpdateVolumeCache()
+    {
+        _cachedSFXVolume = masterVolume * sfxVolume;
+        _cachedUIVolume = masterVolume * uiVolume;
     }
 
     // === 편의 함수들 ===

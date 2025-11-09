@@ -48,6 +48,7 @@ public class InputManager : MonoBehaviour
 
     [Header("▶ 데드존")]
     public float movementDeadzone = 0.1f;
+    private float _deadzoneSquared;
     #endregion
 
     #region 입력 상태 캐싱
@@ -87,6 +88,8 @@ public class InputManager : MonoBehaviour
         }
         else
             Destroy(gameObject);
+
+        _deadzoneSquared = movementDeadzone * movementDeadzone;
     }
 
     void Update()
@@ -107,7 +110,7 @@ public class InputManager : MonoBehaviour
         _currentMovementInput = new Vector2(h, v);
 
         // 데드존 적용
-        if (_currentMovementInput.magnitude < movementDeadzone)
+        if (_currentMovementInput.sqrMagnitude < _deadzoneSquared)
             _currentMovementInput = Vector2.zero;
 
         // 스킬 입력 (1, 2, 3, 4)

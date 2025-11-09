@@ -1,43 +1,40 @@
 using UnityEngine;
 using System.Collections.Generic;
-using UnityEngine.UI; // ★ UI 관련 컴포넌트 사용을 위해 추가
-using TMPro; // ★ TextMeshPro 사용 시 추가
+using UnityEngine.UI;
+using TMPro;
 
 /// <summary>
 /// 게임 UI (스킬 아이콘, Focus 바, 경보 레벨 등)를 관리합니다.
 /// </summary>
 public class UIManager : MonoBehaviour
 {
-    private RhythmPatternChecker _rhythmChecker;
-    private SkillLoadoutManager _loadoutManager;
-    private MissionManager _missionManager;
-
+    // ⭐ GameServices 사용 (불필요한 private 필드 제거)
     private RhythmPatternChecker RhythmChecker => GameServices.RhythmChecker;
     private SkillLoadoutManager LoadoutManager => GameServices.SkillLoadout;
     private MissionManager MissionManager => GameServices.MissionManager;
 
-    // ⭐ 최적화: 비트 이벤트 기반 업데이트
     private bool _needsUpdate = true;
 
     [Header("▶ UI 오브젝트")]
     public GameObject skillIconPrefab;
     public Transform skillIconContainer;
-    public TextMeshProUGUI judgmentText; // ★ 판정 텍스트 표시용 (TextMeshProG UI 컴포넌트 필요)
-    public float judgmentDisplayDuration = 0.5f; // ★ 판정 텍스트 표시 시간
+    public TextMeshProUGUI judgmentText;
+    public float judgmentDisplayDuration = 0.5f;
 
     [Header("▶ 경보 레벨 UI")]
     public Image alertBarFill;
     public TextMeshProUGUI alertLevelText;
 
     [Header("▶ 발각 진행도 UI")]
-    public GameObject detectionWarning; // "!" 경고 아이콘
-    public Image detectionProgressBar; // 발각 진행도 바
+    public GameObject detectionWarning;
+    public Image detectionProgressBar;
 
     [Header("▶ Focus UI")]
     public Image focusBarFill;
+    public TextMeshProUGUI focusText;
 
-    public Dictionary<ConstellationSkillData, GameObject> _skillIconMap =
-        new Dictionary<ConstellationSkillData, GameObject>();
+    private Dictionary<ConstellationSkillData, SkillIconUI> _skillIconMap =
+        new Dictionary<ConstellationSkillData, SkillIconUI>();
 
     void Start()
     {
@@ -46,9 +43,11 @@ public class UIManager : MonoBehaviour
         if (judgmentText != null)
             judgmentText.gameObject.SetActive(false);
 
-        // ⭐ 비트 이벤트에 구독
         if (GameServices.RhythmManager != null)
             GameServices.RhythmManager.OnBeatCounted.AddListener(OnBeat);
+
+        if (MissionManager != null)
+            MissionManager.OnAlertLevelChanged.AddListener(UpdateAlertUI);
     }
 
     void Update()
@@ -56,32 +55,37 @@ public class UIManager : MonoBehaviour
         if (!_needsUpdate) return;
     
         UpdateSkillCooldowns();
+        UpdateFocusUI();
         _needsUpdate = false;
     }
 
-    // --- 스킬 UI 초기화 ---
     void InitializeSkillIcons()
     {
-        if (_loadoutManager == null || skillIconPrefab == null || skillIconContainer == null) return;
-
-        foreach (var pair in _loadoutManager.activeSkills)
+        if (LoadoutManager == null || skillIconPrefab == null || skillIconContainer == null)
         {
-            KeyCode key = pair.Key; // ★ 키 정보
+            Debug.LogWarning("UIManager: 스킬 아이콘 초기화에 필요한 컴포넌트가 누락되었습니다.");
+            return;
+        }
+
+        foreach (var pair in LoadoutManager.activeSkills)
+        {
+            KeyCode key = pair.Key;
             ConstellationSkillData skill = pair.Value;
 
             GameObject iconObject = Instantiate(skillIconPrefab, skillIconContainer);
-
-            SkillIconUI iconUI = iconObject.GetComponent<SkillIconUI>(); // SkillIconUI라는 보조 스크립트가 필요합니다 (아래 참조).
+            SkillIconUI iconUI = iconObject.GetComponent<SkillIconUI>();
+            
             if (iconUI != null)
             {
-                iconUI.Setup(skill.icon, key.ToString().Replace("Alpha", ""), skill.skillName);
+                string keyDisplay = key.ToString().Replace("Alpha", "");
+                iconUI.Setup(skill.icon, keyDisplay, skill.skillName);
+                _skillIconMap.Add(skill, iconUI);
             }
-
-            _skillIconMap.Add(skill, iconObject);
+            else
+                Debug.LogError($"UIManager: SkillIconUI 컴포넌트를 찾을 수 없습니다! ({skill.skillName})");
         }
     }
 
-    // --- 쿨타임 업데이트 로직 ---
     void UpdateSkillCooldowns()
     {
         if (RhythmChecker == null || LoadoutManager == null) return;
@@ -90,18 +94,54 @@ public class UIManager : MonoBehaviour
         {
             ConstellationSkillData skill = skillPair.Value;
 
-            if (_skillIconMap.TryGetValue(skill, out GameObject iconObject))
+            if (_skillIconMap.TryGetValue(skill, out SkillIconUI iconUI))
             {
                 int remainingBeats = RhythmChecker.GetRemainingCooldown(skill);
-                
-                SkillIconUI iconUI = iconObject.GetComponent<SkillIconUI>();
-                if (iconUI != null)
-                    iconUI.UpdateCooldown(remainingBeats);
+                iconUI.UpdateCooldown(remainingBeats);
             }
         }
     }
 
-    // --- 판정 결과 표시 함수 ---
+    void UpdateFocusUI()
+    {
+        if (RhythmChecker == null) return;
+
+        if (focusBarFill != null)
+        {
+            float fillAmount = RhythmChecker.currentFocus / RhythmChecker.maxFocus;
+            focusBarFill.fillAmount = fillAmount;
+        }
+
+        if (focusText != null)
+            focusText.text = $"{Mathf.RoundToInt(RhythmChecker.currentFocus)} / {Mathf.RoundToInt(RhythmChecker.maxFocus)}";
+    }
+
+    void UpdateAlertUI()
+    {
+        if (MissionManager == null) return;
+
+        if (alertBarFill != null)
+        {
+            float fillAmount = (float)MissionManager.currentAlertLevel / MissionManager.maxAlertLevel;
+            alertBarFill.fillAmount = fillAmount;
+
+            // 경보 레벨에 따른 색상 변경
+            if (fillAmount >= 0.8f)
+                alertBarFill.color = Color.red;
+            else if (fillAmount >= 0.5f)
+                alertBarFill.color = Color.yellow;
+            else
+                alertBarFill.color = Color.green;
+        }
+
+        if (alertLevelText != null)
+            alertLevelText.text = $"경보: {MissionManager.currentAlertLevel}/{MissionManager.maxAlertLevel}";
+
+        // 경보 레벨이 높으면 경고 표시
+        if (detectionWarning != null)
+            detectionWarning.SetActive(MissionManager.currentAlertLevel >= MissionManager.maxAlertLevel - 1);
+    }
+
     public void ShowJudgment(string judgmentTextString)
     {
         if (judgmentText != null)
@@ -109,7 +149,20 @@ public class UIManager : MonoBehaviour
             judgmentText.text = judgmentTextString;
             judgmentText.gameObject.SetActive(true);
 
-            // 지정된 시간 후 텍스트 비활성화
+            // 색상 설정
+            switch (judgmentTextString)
+            {
+                case "Perfect":
+                    judgmentText.color = Color.cyan;
+                    break;
+                case "Great":
+                    judgmentText.color = Color.yellow;
+                    break;
+                case "Miss":
+                    judgmentText.color = Color.red;
+                    break;
+            }
+
             CancelInvoke(nameof(HideJudgmentText));
             Invoke(nameof(HideJudgmentText), judgmentDisplayDuration);
         }
@@ -118,9 +171,22 @@ public class UIManager : MonoBehaviour
     private void HideJudgmentText()
     {
         if (judgmentText != null)
-        {
             judgmentText.gameObject.SetActive(false);
+    }
+
+    /// <summary>
+    /// 발각 진행도 UI 업데이트 (경비병이 플레이어를 발견했을 때)
+    /// </summary>
+    public void UpdateDetectionProgress(float progress)
+    {
+        if (detectionProgressBar != null)
+        {
+            detectionProgressBar.fillAmount = progress;
+            detectionProgressBar.gameObject.SetActive(progress > 0f);
         }
+
+        if (detectionWarning != null)
+            detectionWarning.SetActive(progress > 0.3f);
     }
 
     void OnBeat(int beat) => _needsUpdate = true;
@@ -129,5 +195,8 @@ public class UIManager : MonoBehaviour
     {
         if (GameServices.RhythmManager != null)
             GameServices.RhythmManager.OnBeatCounted.RemoveListener(OnBeat);
+
+        if (MissionManager != null)
+            MissionManager.OnAlertLevelChanged.RemoveListener(UpdateAlertUI);
     }
 }

@@ -2,26 +2,18 @@ using UnityEngine;
 using System.Collections.Generic;
 
 /// <summary>
-/// 리듬 기반 경비병 순찰 및 탐지 시스템 (최적화 완료)
-/// 
-/// ⭐ 최적화 포인트:
-/// - FindObjectOfType 제거 → GameServices 사용
-/// - NonAlloc 물리 쿼리로 GC 방지
-/// - sqrMagnitude로 거리 계산 최적화
-/// - 프레임 스킵으로 CPU 사용량 감소
-/// - Transform 접근 캐싱
+/// 리듬 기반 경비병 순찰 및 탐지 시스템 (최적화 + 상태 시스템 통합)
 /// </summary>
 [RequireComponent(typeof(ProbabilisticDetection))]
 [RequireComponent(typeof(Rigidbody2D))]
 public class GuardRhythmPatrol : MonoBehaviour
 {
-    #region 컴포넌트 및 참조 (⭐ 최적화: 캐싱)
+    #region 컴포넌트 및 참조
     private Rigidbody2D _rigidbody;
     private ProbabilisticDetection _detectionSystem;
-    private Transform _cachedTransform; // ⭐ Transform 캐싱
-    private Vector2 _cachedPosition;    // ⭐ 위치 캐싱
+    private Transform _cachedTransform;
+    private Vector2 _cachedPosition;
 
-    // ⭐ 최적화: GameServices 사용 (FindObjectOfType 제거)
     private RhythmSyncManager RhythmManager => GameServices.RhythmManager;
     private PlayerController Player => GameServices.Player;
     private MissionManager MissionManager => GameServices.MissionManager;
@@ -68,21 +60,21 @@ public class GuardRhythmPatrol : MonoBehaviour
     private Vector2 _lastDecoyPosition;
     #endregion
 
-    #region ⭐ 최적화: 프레임 스킵 및 결과 캐싱
+    #region 최적화
     private int _frameSkipCounter = 0;
-    private const int DETECTION_CHECK_INTERVAL = 3; // 3프레임마다 체크
-    
-    // ⭐ NonAlloc용 결과 배열 재사용 (GC 방지)
+    private const int DETECTION_CHECK_INTERVAL = 3;
     private Collider2D[] _decoyCheckResults = new Collider2D[10];
     #endregion
 
+    // ⭐ 상태 시스템
     private GuardState _currentState;
+    private bool _stateSystemEnabled = true;
 
     void Awake()
     {
         _rigidbody = GetComponent<Rigidbody2D>();
         _detectionSystem = GetComponent<ProbabilisticDetection>();
-        _cachedTransform = transform; // ⭐ Transform 캐싱
+        _cachedTransform = transform;
         
         if (_rigidbody == null)
         {
@@ -96,7 +88,6 @@ public class GuardRhythmPatrol : MonoBehaviour
 
     void Start()
     {
-        // ⭐ 최적화: GameServices를 통한 이벤트 구독
         if (RhythmManager != null)
         {
             RhythmManager.OnBeatCounted.AddListener(HandleRhythmActions);
@@ -113,16 +104,26 @@ public class GuardRhythmPatrol : MonoBehaviour
         _targetPosition = _rigidbody.position;
         _currentPatrolInterval = patrolBeatIntervalMax;
         _nextMoveBeat = RhythmManager.currentBeatCount + _currentPatrolInterval;
+
+        // ⭐ 상태 시스템 초기화
+        if (_stateSystemEnabled)
+            ChangeState(new GuardPatrollingState(this));
     }
 
     void Update()
     {
-        if (_isParalyzed || _isFlashed) return;
-
-        // ⭐ 최적화: 위치 캐싱
         _cachedPosition = _rigidbody.position;
 
-        // ⭐ 최적화: 프레임 스킵
+        // ⭐ 상태 시스템 사용
+        if (_stateSystemEnabled && _currentState != null)
+        {
+            _currentState.Update();
+            return;
+        }
+
+        // 레거시 시스템 (상태 시스템 미사용 시)
+        if (_isParalyzed || _isFlashed) return;
+
         _frameSkipCounter++;
         if (_frameSkipCounter >= DETECTION_CHECK_INTERVAL)
         {
@@ -137,6 +138,14 @@ public class GuardRhythmPatrol : MonoBehaviour
     
     void HandleRhythmActions(int currentBeat)
     {
+        // ⭐ 상태 시스템 사용
+        if (_stateSystemEnabled && _currentState != null)
+        {
+            _currentState.OnBeat(currentBeat);
+            return;
+        }
+
+        // 레거시 시스템
         if (_isParalyzed || _isFlashed) return;
 
         if (_isPatrolling && currentBeat >= _nextMoveBeat)
@@ -156,10 +165,9 @@ public class GuardRhythmPatrol : MonoBehaviour
         
         _nextMoveBeat = currentBeat + _currentPatrolInterval;
         
-        // ⭐ 최적화: 캐싱된 위치 사용
         Vector2 direction = (_targetPosition - _cachedPosition).normalized;
 
-        if (direction.sqrMagnitude > 0.001f) // ⭐ sqrMagnitude 사용
+        if (direction.sqrMagnitude > 0.001f)
         {
             float angle = Vector2.SignedAngle(Vector2.up, direction);
             _cachedTransform.rotation = Quaternion.Euler(0, 0, angle);
@@ -170,11 +178,10 @@ public class GuardRhythmPatrol : MonoBehaviour
     {
         if (_rigidbody == null) return;
         
-        // ⭐ 최적화: sqrMagnitude로 거리 체크
         Vector2 moveVector = _targetPosition - _cachedPosition;
         float sqrDistance = moveVector.sqrMagnitude;
         
-        if (sqrDistance > 0.0001f) // 0.01f의 제곱
+        if (sqrDistance > 0.0001f)
         {
             Vector2 normalizedMove = moveVector.normalized;
             _rigidbody.MovePosition(_cachedPosition + normalizedMove * moveSpeed * Time.deltaTime);
@@ -193,7 +200,6 @@ public class GuardRhythmPatrol : MonoBehaviour
         Vector2 player2DPos = Player.transform.position;
         Vector2 directionToPlayer = (player2DPos - _cachedPosition).normalized;
         
-        // ⭐ 최적화: sqrMagnitude로 거리 체크
         float sqrDistanceToPlayer = (player2DPos - _cachedPosition).sqrMagnitude;
         float sqrViewDistance = viewDistance * viewDistance;
         
@@ -208,13 +214,9 @@ public class GuardRhythmPatrol : MonoBehaviour
             {
                 PlayerStealth stealth = Player.GetComponent<PlayerStealth>();
                 if (stealth != null && !stealth.isStealthActive && !Player.isIllusionActive)
-                {
                     MissionManager.MissionComplete(false);
-                }
                 else
-                {
                     MissionManager.IncreaseAlertLevel(1);
-                }
             }
         }
     }
@@ -225,6 +227,10 @@ public class GuardRhythmPatrol : MonoBehaviour
         
         _isParalyzed = true;
         _paralysisEndBeat = RhythmManager.currentBeatCount + durationInBeats;
+        
+        // ⭐ 상태 시스템 사용
+        if (_stateSystemEnabled)
+            ChangeState(new GuardStunnedState(this, durationInBeats, false));
         
         Debug.Log($"경비병 {gameObject.name} 마비 적용! {_paralysisEndBeat} 비트까지 정지.");
     }
@@ -245,6 +251,10 @@ public class GuardRhythmPatrol : MonoBehaviour
         _isFlashed = true;
         _flashEndBeat = RhythmManager.currentBeatCount + durationInBeats;
         
+        // ⭐ 상태 시스템 사용
+        if (_stateSystemEnabled)
+            ChangeState(new GuardStunnedState(this, durationInBeats, true));
+        
         Debug.Log($"경비병 {gameObject.name} 섬광탄 적용! {_flashEndBeat} 비트까지 시야 차단.");
     }
     
@@ -260,13 +270,7 @@ public class GuardRhythmPatrol : MonoBehaviour
     {
         if (_activeDecoy != null) return false;
         
-        // ⭐ 최적화: OverlapCircleNonAlloc 사용 (GC 방지)
-        int hitCount = Physics2D.OverlapCircleNonAlloc(
-            _cachedPosition, 
-            viewDistance, 
-            _decoyCheckResults, 
-            RhythmManager.guardMask
-        );
+        int hitCount = Physics2D.OverlapCircleNonAlloc(_cachedPosition, viewDistance, _decoyCheckResults, RhythmManager.guardMask);
         
         for (int i = 0; i < hitCount; i++)
         {
@@ -276,6 +280,11 @@ public class GuardRhythmPatrol : MonoBehaviour
                 _lastDecoyPosition = _decoyCheckResults[i].transform.position;
                 _isPatrolling = false;
                 _nextMoveBeat = RhythmManager.currentBeatCount;
+
+                // ⭐ 상태 시스템 사용
+                if (_stateSystemEnabled)
+                    ChangeState(new GuardInvestigatingState(this, _lastDecoyPosition));
+
                 return true;
             }
         }
@@ -328,7 +337,6 @@ public class GuardRhythmPatrol : MonoBehaviour
         
         Debug.Log($"경비병 {gameObject.name}이/가 제거되었습니다.");
         
-        // ⭐ 최적화: 오브젝트 풀링 지원
         if (ObjectPoolManager.Instance != null)
             ObjectPoolManager.Instance.Despawn(gameObject, "Guard");
         else
@@ -345,11 +353,23 @@ public class GuardRhythmPatrol : MonoBehaviour
         }
     }
 
+    // ⭐ 상태 시스템 메서드
     public void ChangeState(GuardState newState)
     {
         _currentState?.Exit();
         _currentState = newState;
         _currentState?.Enter();
+    }
+
+    /// <summary>
+    /// 상태 시스템 활성화/비활성화 (디버깅용)
+    /// </summary>
+    public void SetStateSystemEnabled(bool enabled)
+    {
+        _stateSystemEnabled = enabled;
+        
+        if (enabled && _currentState == null)
+            ChangeState(new GuardPatrollingState(this));
     }
 
     public bool isFlashed { get => _isFlashed; set => _isFlashed = value; }
