@@ -15,11 +15,17 @@ public class RhythmPatternChecker : MonoBehaviour
     
     #region Focus 시스템
     [Header("▶ Focus 시스템")]
+    [Tooltip("Focus values can be overridden by Difficulty settings")]
     public float maxFocus = 100f;
     public float focusPerPerfect = 10f;
-    public float focusCostPerSkill = 5f;
+    public float focusCostPerSkill = 15f; // Increased from 5 for better balance
     public float focusDecayPerMiss = 15f;
     public float currentFocus = 0f;
+
+    [Header("▶ Perfect Combo Bonuses")]
+    [Tooltip("Cooldown multiplier for perfect combo (0.67 = 33% reduction)")]
+    [Range(0.5f, 1f)]
+    public float perfectComboCooldownMultiplier = 0.67f; // Changed from 0.5 (50% reduction)
     #endregion
 
     #region 스킬 상태
@@ -231,8 +237,9 @@ public class RhythmPatternChecker : MonoBehaviour
             return;
         }
 
-        int actualCooldown = _isCurrentComboPerfect 
-            ? Mathf.Max(1, skill.cooldownBeats / 2)
+        // Apply perfect combo cooldown bonus (33% reduction instead of 50%)
+        int actualCooldown = _isCurrentComboPerfect
+            ? Mathf.Max(1, Mathf.RoundToInt(skill.cooldownBeats * perfectComboCooldownMultiplier))
             : skill.cooldownBeats;
         
         SetSkillCooldown(skillIndex, actualCooldown);
