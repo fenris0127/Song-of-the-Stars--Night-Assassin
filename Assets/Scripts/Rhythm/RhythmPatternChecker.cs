@@ -15,11 +15,17 @@ public class RhythmPatternChecker : MonoBehaviour
     
     #region Focus 시스템
     [Header("▶ Focus 시스템")]
+    [Tooltip("Focus values can be overridden by Difficulty settings")]
     public float maxFocus = 100f;
     public float focusPerPerfect = 10f;
-    public float focusCostPerSkill = 5f;
+    public float focusCostPerSkill = 15f; // Increased from 5 for better balance
     public float focusDecayPerMiss = 15f;
     public float currentFocus = 0f;
+
+    [Header("▶ Perfect Combo Bonuses")]
+    [Tooltip("Cooldown multiplier for perfect combo (0.67 = 33% reduction)")]
+    [Range(0.5f, 1f)]
+    public float perfectComboCooldownMultiplier = 0.67f; // Changed from 0.5 (50% reduction)
     #endregion
 
     #region 스킬 상태
@@ -231,8 +237,9 @@ public class RhythmPatternChecker : MonoBehaviour
             return;
         }
 
-        int actualCooldown = _isCurrentComboPerfect 
-            ? Mathf.Max(1, skill.cooldownBeats / 2)
+        // Apply perfect combo cooldown bonus (33% reduction instead of 50%)
+        int actualCooldown = _isCurrentComboPerfect
+            ? Mathf.Max(1, Mathf.RoundToInt(skill.cooldownBeats * perfectComboCooldownMultiplier))
             : skill.cooldownBeats;
         
         SetSkillCooldown(skillIndex, actualCooldown);
@@ -242,24 +249,41 @@ public class RhythmPatternChecker : MonoBehaviour
         switch (skill.category)
         {
             case SkillCategory.Stealth:
-                GameServices.PlayerStealth?.ToggleStealth();
+                ExecuteStealthSkill(skill);
                 break;
             case SkillCategory.Lure:
-                Player.ActivateIllusion(5);
+                ExecuteLureSkill(skill);
                 break;
             case SkillCategory.Movement:
-                Player.ActivateCharge(skill.inputCount * Player.moveDistance);
+                ExecuteMovementSkill(skill);
                 break;
             case SkillCategory.Attack:
-                ExecuteAttackSkill();
+                ExecuteAttackSkill(skill);
                 break;
         }
         
         ResetInputSequence();
     }
 
-    void ExecuteAttackSkill()
+    void ExecuteAttackSkill(ConstellationSkillData skill)
     {
+        // Check for specific skill implementations
+        if (skill != null && (skill.skillName == "Orion's Arrow" || skill.skillName.Contains("Orion")))
+        {
+            // Orion's Arrow - Ranged projectile attack
+            var orionArrow = Player?.GetComponent<SongOfTheStars.Skills.OrionsArrowSkill>();
+            if (orionArrow != null)
+            {
+                orionArrow.ActivateSkill();
+                return;
+            }
+            else
+            {
+                Debug.LogWarning("OrionsArrowSkill component not found on Player!");
+            }
+        }
+
+        // Legacy/default attack behavior based on input sequence
         if (_inputSequenceCount == 1)
         {
             var target = PlayerAssassination?.FindGuardInAssassinationRange();
@@ -277,7 +301,107 @@ public class RhythmPatternChecker : MonoBehaviour
             ApplyFlashToClosestGuard(3);
         }
     }
-    
+
+    void ExecuteLureSkill(ConstellationSkillData skill)
+    {
+        // Check for specific skill implementations
+        if (skill != null && (skill.skillName == "Gemini Clone" || skill.skillName.Contains("Gemini")))
+        {
+            // Gemini Clone - Moving decoy
+            var geminiClone = Player?.GetComponent<SongOfTheStars.Skills.GeminiCloneSkill>();
+            if (geminiClone != null)
+            {
+                geminiClone.ActivateSkill();
+                return;
+            }
+            else
+            {
+                Debug.LogWarning("GeminiCloneSkill component not found on Player!");
+            }
+        }
+
+        // Legacy/default lure behavior
+        if (Player != null)
+        {
+            Player.ActivateIllusion(5);
+        }
+    }
+
+    void ExecuteStealthSkill(ConstellationSkillData skill)
+    {
+        // Check for specific skill implementations
+        if (skill != null && (skill.skillName == "Shadow Blend" || skill.skillName.Contains("Shadow")))
+        {
+            // Shadow Blend - Stationary invisibility
+            var shadowBlend = Player?.GetComponent<SongOfTheStars.Skills.ShadowBlendSkill>();
+            if (shadowBlend != null)
+            {
+                shadowBlend.ActivateSkill();
+                return;
+            }
+            else
+            {
+                Debug.LogWarning("ShadowBlendSkill component not found on Player!");
+            }
+        }
+        else if (skill != null && (skill.skillName == "Andromeda's Veil" || skill.skillName.Contains("Andromeda")))
+        {
+            // Andromeda's Veil - Full invisibility with movement (to be implemented)
+            var andromedaVeil = Player?.GetComponent<SongOfTheStars.Skills.AndromedaVeilSkill>();
+            if (andromedaVeil != null)
+            {
+                andromedaVeil.ActivateSkill();
+                return;
+            }
+            else
+            {
+                Debug.LogWarning("AndromedaVeilSkill component not found on Player!");
+            }
+        }
+
+        // Legacy/default stealth behavior
+        GameServices.PlayerStealth?.ToggleStealth();
+    }
+
+    void ExecuteMovementSkill(ConstellationSkillData skill)
+    {
+        // Check for specific skill implementations
+        if (skill != null && (skill.skillName == "Pegasus Dash" || skill.skillName.Contains("Pegasus")))
+        {
+            // Pegasus Dash - Teleport dash
+            var pegasusDash = Player?.GetComponent<SongOfTheStars.Skills.PegasusDashSkill>();
+            if (pegasusDash != null)
+            {
+                pegasusDash.ActivateSkill();
+                return;
+            }
+            else
+            {
+                Debug.LogWarning("PegasusDashSkill component not found on Player!");
+            }
+        }
+        else if (skill != null && (skill.skillName == "Aquarius Flow" || skill.skillName.Contains("Aquarius")))
+        {
+            // Aquarius Flow - Speed boost
+            var aquariusFlow = Player?.GetComponent<SongOfTheStars.Skills.AquariusFlowSkill>();
+            if (aquariusFlow != null)
+            {
+                aquariusFlow.ActivateSkill();
+                return;
+            }
+            else
+            {
+                Debug.LogWarning("AquariusFlowSkill component not found on Player!");
+            }
+        }
+
+        // Legacy/default movement behavior (charge)
+        if (Player != null)
+        {
+            Player.ActivateCharge(skill.inputCount * Player.moveDistance);
+        }
+    }
+
     public bool IsSkillOnCooldown(int skillIndex)
     {
         if (RhythmManager == null || skillIndex < 0 || skillIndex >= 4) 

@@ -207,6 +207,18 @@ public bool CheckForDecoy()
     public void ApplyFlash(int durationBeats) => Flash(durationBeats);
     public void ApplyParalysis(int durationBeats) => Paralyze(durationBeats);
     
+    /// <summary>
+    /// Takes damage from skills or attacks
+    /// 스킬이나 공격으로부터 피해를 받습니다
+    /// </summary>
+    public void TakeDamage(float damage)
+    {
+        // Guard has no health system - any damage kills instantly
+        // This matches the instant-kill assassination design
+        Debug.Log($"Guard {gameObject.name} took {damage} damage - eliminated");
+        Die();
+    }
+
     // ⭐ 플레이어 암살 시 호출되는 메서드
     public void Die()
     {
